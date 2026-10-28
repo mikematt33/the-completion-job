@@ -1,0 +1,16 @@
+{
+  "name": "The Completion Job",
+  "short_name": "Completion Job",
+  "description": "A planning board for your remaining PAYDAY 2 achievements.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c131b",
+  "theme_color": "#0c131b",
+  "lang": "en",
+  "icons": [
+    { "src": "./icons/icon-192.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
+
