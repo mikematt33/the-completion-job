@@ -214,6 +214,11 @@ nav { display: grid; gap: 4px; margin-top: 36px; }
 .breadcrumb strong { font-weight: 600; color: var(--ink); }
 .profile { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 500; color: var(--ink-soft); padding: 4px 8px 4px 4px; border-radius: 24px; }
 .profile:hover { background: var(--surface-2); }
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+.sign-out { color: var(--muted); font-size: 13px; }
+.sign-out:hover { color: var(--ink); }
+#file-steps > summary { font-size: 15px; font-weight: 500; color: var(--accent); cursor: pointer; padding: 4px 0; }
+#file-steps[open] > summary { margin-bottom: 8px; }
 .avatar { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); }
 .avatar svg { fill: var(--accent-ink); }
 main { width: 100%; max-width: 1240px; margin: 0 auto; padding: 36px 44px 0; flex: 1; }
@@ -621,7 +626,7 @@ code.block em { font-style: normal; color: var(--accent); }
 .landing-help details code { font-size: 12px; }
 .no-data .nav-item { opacity: 0.45; cursor: default; }
 .no-data .nav-item:hover { background: none; }
-.no-data #nav-count, .no-data .profile, .no-data #backup-side, .no-data #shortcuts-open, .no-data .side-footer .status-light, .no-data #save-status { display: none; }
+.no-data #nav-count, .no-data .profile, .no-data .sign-out, .no-data #backup-side, .no-data #shortcuts-open, .no-data .side-footer .status-light, .no-data #save-status { display: none; }
 .danger-zone { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 4px; }
 .danger-link { color: var(--danger); }
 .danger-zone .fine-print { margin-top: 0; }

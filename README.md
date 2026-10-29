@@ -12,7 +12,9 @@ The board shows how far along you are, where the remaining work is (achievements
 
 The vault lists every remaining achievement with its original Steam description. You can search, filter by heist, type, status, or difficulty, sort by rarity, and group by heist. Each achievement has a notes field, a "set aside for later" option, and links to the PAYDAY wiki and Steam guides.
 
-Preferences hold your name, Steam ID, Infamy rank, playstyle, comfortable difficulty, session length, batch size, DLC, and mods. Session length and batch size decide how much goes into a plan.
+Preferences hold your name, Steam ID, Infamy rank, playstyle, comfortable difficulty, session length, batch size, DLC, and mods. Session length and batch size decide how much goes into a plan. Preferences also links to your Steam achievements page and to Overkill's FBI Files stats site (which has no direct links, so the button copies your Steam profile link for pasting into its Suspect Database).
+
+**Sign out** in the top bar clears this browser and returns to the start screen, so another player can use the same device.
 
 Difficulty is shown with skulls, the same way the game does it.
 

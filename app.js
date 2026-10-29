@@ -231,6 +231,7 @@ function renderHero() {
   const steamLink = $('#steam-link');
   steamLink.hidden = !steamUrl;
   if (steamUrl) steamLink.href = `${steamUrl}achievements/218620/`;
+  $('#fbi-open').hidden = !steamUrl;
 
   const nextInfamy = items
     .filter((a) => a.kind === 'infamy' && !state.completed[a.id])
@@ -436,6 +437,7 @@ function detail(id) {
     <div class="detail-links">
       <a class="text-button" href="${wiki}" target="_blank" rel="noopener noreferrer">Look it up on the PAYDAY wiki ↗</a>
       <a class="text-button" href="${guides}" target="_blank" rel="noopener noreferrer">Search Steam guides ↗</a>
+      <a class="text-button" href="https://fbi.paydaythegame.com/" target="_blank" rel="noopener noreferrer" title="Official PAYDAY 2 stats site. Heist details are under Files → Heist Database.">FBI Files ↗</a>
     </div>
     <label class="detail-note-label" for="achievement-note">Your field notes</label>
     <textarea id="achievement-note" maxlength="4000" rows="4" placeholder="Loadout, route, or something to remember">${esc(state.notes[id] || '')}</textarea>
@@ -757,6 +759,22 @@ $('#how-open').onclick = () => $('#how-dialog').showModal();
 $('#reset-data').onclick = () => {
   if (window.confirm('Remove your list, checkmarks, notes and preferences from this browser? Export a backup first if you want to keep them.')) resetEverything();
 };
+$('#sign-out').onclick = () => {
+  const what = STEAM_PROXY_URL ? 'Your list can be fetched again from Steam, but checkmarks, notes and preferences on this browser will be removed.' : 'Your list, checkmarks, notes and preferences will be removed from this browser.';
+  if (window.confirm(`Sign out? ${what} Export a backup first if you want to keep them.`)) {
+    resetEverything();
+    notify('Signed out. This browser has been cleared.');
+  }
+};
+// FBI Files has no deep links, so hand over the Steam ID on the clipboard and open the Suspect Database.
+$('#fbi-open').onclick = async () => {
+  const url = steamProfileUrl(state.prefs.steam);
+  if (!url) return;
+  let copied = false;
+  try { await navigator.clipboard.writeText(url); copied = true; } catch { /* clipboard blocked; the user can type it */ }
+  window.open('https://fbi.paydaythegame.com/', '_blank', 'noopener');
+  notify(copied ? 'Your Steam profile link is on the clipboard. Paste it into the Suspect Database search.' : 'Opened FBI Files. Paste your Steam profile link into the Suspect Database search.');
+};
 
 $('#import-file').onchange = async (e) => {
   const result = await importFile(e.target.files[0], $('#import-error'));
@@ -867,6 +885,10 @@ function registerServiceWorker() {
 
 function init() {
   for (const el of document.querySelectorAll('.proxy-only')) el.hidden = !STEAM_PROXY_URL;
+  for (const el of document.querySelectorAll('.file-only')) el.hidden = Boolean(STEAM_PROXY_URL);
+  // With a proxy the Steam ID is the way in, so the field is required and the file route folds away.
+  $('#landing-form').elements.steam.required = Boolean(STEAM_PROXY_URL);
+  $('#file-steps').open = !STEAM_PROXY_URL;
   let raw = null;
   try {
     raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');

@@ -8,17 +8,17 @@
   <meta name="description" content="Turn your remaining PAYDAY 2 achievements into a manageable next session. Plan heists, track progress, and make every job count.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="The Completion Job">
-  <meta property="og:title" content="The Completion Job — your road to 100% in PAYDAY 2">
+  <meta property="og:title" content="The Completion Job: your road to 100% in PAYDAY 2">
   <meta property="og:description" content="A planning board for your remaining PAYDAY 2 achievements: grouped by heist, paced for your sessions, saved in your browser.">
   <meta property="og:url" content="https://mikematt33.github.io/the-completion-job/">
   <meta property="og:image" content="https://mikematt33.github.io/the-completion-job/icons/social-card.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="The Completion Job — your road to 100% in PAYDAY 2">
+  <meta name="twitter:title" content="The Completion Job: your road to 100% in PAYDAY 2">
   <meta name="twitter:description" content="A planning board for your remaining PAYDAY 2 achievements.">
   <meta name="twitter:image" content="https://mikematt33.github.io/the-completion-job/icons/social-card.png">
-  <title>The Completion Job — Your road to 100%</title>
+  <title>The Completion Job: Your road to 100%</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icons/icon-192.svg">
   <link rel="manifest" href="./manifest.webmanifest">
@@ -74,10 +74,13 @@
   <div class="workspace">
     <header class="topbar">
       <div class="breadcrumb">The Completion Job <span aria-hidden="true">/</span> <strong id="page-label">The board</strong></div>
-      <button id="profile-button" class="profile" title="Open your preferences">
-        <span class="avatar" aria-hidden="true"><svg width="18" height="18"><use href="#mask"/></svg></span>
-        <span id="profile-name">Heister</span>
-      </button>
+      <div class="topbar-actions">
+        <button id="profile-button" class="profile" title="Open your preferences">
+          <span class="avatar" aria-hidden="true"><svg width="18" height="18"><use href="#mask"/></svg></span>
+          <span id="profile-name">Heister</span>
+        </button>
+        <button id="sign-out" class="text-button sign-out" title="Clear this browser and return to the start screen">Sign out</button>
+      </div>
     </header>
 
     <main id="main" tabindex="-1">
@@ -85,17 +88,17 @@
       <section id="landing-view" class="view landing" hidden>
         <div class="landing-intro">
           <h1>Plan your road to 100%</h1>
-          <p>Bring your PAYDAY 2 achievement list and this board will group what is left by heist, build sessions that fit the time you have, and keep track as you tick things off. Everything stays in this browser.</p>
+          <p>Point this board at your PAYDAY 2 achievements and it groups what is left by heist, builds sessions that fit the time you have, and keeps track as you tick things off. Your progress stays in this browser.</p>
         </div>
 
         <div class="landing-grid">
           <form id="landing-form" class="panel landing-import">
             <h2>Start here</h2>
             <label><span>Your name <small class="optional">optional</small></span><input name="player" maxlength="60" autocomplete="nickname" placeholder="What should the board call you?"></label>
-            <label><span>Steam ID <small class="optional">optional</small></span><input name="steam" maxlength="64" autocomplete="off" placeholder="Vanity ID or SteamID64"></label>
+            <label><span>Steam ID <small class="optional file-only">optional</small></span><input name="steam" maxlength="64" autocomplete="off" placeholder="Vanity name or 17-digit SteamID64"></label>
             <div class="proxy-only fetch-row" hidden>
               <button type="button" id="landing-fetch" class="button primary">Fetch from Steam</button>
-              <span>Your profile’s game details must be public. Only the Steam ID is sent.</span>
+              <span>Your Steam profile’s game details must be set to Public.</span>
             </div>
             <p class="proxy-only or-divider" hidden><span>or import a file</span></p>
             <label class="drop-zone" id="drop-zone" for="landing-file">
@@ -105,24 +108,35 @@
               <input id="landing-file" type="file" accept=".json,application/json" class="sr-only">
             </label>
             <p id="landing-error" class="error" role="alert"></p>
-            <p class="fine-print">Nothing is uploaded anywhere. The file is read in your browser and saved to its local storage.<span class="proxy-only" hidden> Fetching sends your Steam ID to this site’s proxy, which asks Steam for your public achievement list; nothing else leaves the browser.</span></p>
+            <p class="fine-print file-only">Nothing is uploaded anywhere. The file is read in your browser and saved to its local storage.</p>
+            <p class="fine-print proxy-only" hidden>Fetching sends only your Steam ID to this site’s proxy, which asks Steam for your public achievement list. Files are read in your browser. Checkmarks, notes and plans never leave this device.</p>
           </form>
 
           <div class="panel landing-help">
-            <h2>Getting your list from Steam</h2>
-            <p class="proxy-only" hidden><strong>Quickest:</strong> type your Steam ID on the left and press Fetch from Steam. The steps below are the manual route, for private profiles or if you would rather not use the proxy.</p>
-            <ol class="steps">
-              <li><strong>Get a Steam Web API key.</strong> Any Steam account can create one at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer">steamcommunity.com/dev/apikey</a>. Use any domain name; it is not checked.</li>
-              <li><strong>Find your SteamID64.</strong> It is the 17-digit number in your profile URL, or shown under Edit Profile. Your game details must be public for the next step to work.</li>
-              <li><strong>Open this address in your browser</strong>, with your key and ID filled in, and save the page as a <code>.json</code> file:
-                <code class="block">https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v1/?appid=218620&amp;l=english&amp;key=<em>YOUR_KEY</em>&amp;steamid=<em>YOUR_ID</em></code>
-              </li>
-              <li><strong>Import that file</strong> on the left. The <code>l=english</code> part matters: without it Steam leaves out the names and descriptions the planner needs.</li>
-            </ol>
-            <p class="fine-print">Keep your API key to yourself. This site never asks for it and has nowhere to put it. You can delete the key afterwards from the same Steam page.</p>
-            <details>
-              <summary>Building the file by hand instead</summary>
-              <p>Any JSON file with an <code>achievements</code> array works. Each entry needs <code>name</code>, <code>description</code>, and <code>status</code> (<code>locked</code> or <code>unlocked</code>). If you include <code>counts</code>, its <code>locked</code> number must match the file.</p>
+            <div class="proxy-only" hidden>
+              <h2>How it works</h2>
+              <ol class="steps">
+                <li><strong>Find your Steam ID.</strong> Open your Steam profile. The address ends in either a vanity name (<code>steamcommunity.com/id/<em>name</em></code>) or a 17-digit number (<code>steamcommunity.com/profiles/<em>7656…</em></code>). Either one works.</li>
+                <li><strong>Make game details public.</strong> Steam → Edit Profile → Privacy Settings → <em>Game details</em> → Public. Steam will not share your achievements otherwise.</li>
+                <li><strong>Fetch.</strong> Your list loads in a moment, and from then on it refreshes from Steam every time you open the app.</li>
+              </ol>
+            </div>
+            <details id="file-steps">
+              <summary class="proxy-only" hidden>Import a file instead (private profiles)</summary>
+              <h2 class="file-only">Getting your list from Steam</h2>
+              <ol class="steps">
+                <li><strong>Get a Steam Web API key.</strong> Any Steam account can create one at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer">steamcommunity.com/dev/apikey</a>. Use any domain name; it is not checked.</li>
+                <li><strong>Find your SteamID64.</strong> It is the 17-digit number in your profile URL, or shown under Edit Profile. Your game details must be public for the next step to work.</li>
+                <li><strong>Open this address in your browser</strong>, with your key and ID filled in, and save the page as a <code>.json</code> file:
+                  <code class="block">https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v1/?appid=218620&amp;l=english&amp;key=<em>YOUR_KEY</em>&amp;steamid=<em>YOUR_ID</em></code>
+                </li>
+                <li><strong>Import that file</strong> on the left. The <code>l=english</code> part matters: without it Steam leaves out the names and descriptions the planner needs.</li>
+              </ol>
+              <p class="fine-print">Keep your API key to yourself. This site never asks for it and has nowhere to put it. You can delete the key afterwards from the same Steam page.</p>
+              <details>
+                <summary>Building the file by hand instead</summary>
+                <p>Any JSON file with an <code>achievements</code> array works. Each entry needs <code>name</code>, <code>description</code>, and <code>status</code> (<code>locked</code> or <code>unlocked</code>). If you include <code>counts</code>, its <code>locked</code> number must match the file.</p>
+              </details>
             </details>
           </div>
         </div>
@@ -275,8 +289,8 @@
           </div>
           <div class="form-grid">
             <label>Your name<input name="player" maxlength="60" placeholder="What should the board call you?"></label>
-            <label>Steam ID<input name="steam" maxlength="64" autocomplete="off" placeholder="Vanity ID or SteamID64" aria-describedby="steam-help"></label>
-            <p id="steam-help" class="form-help wide">The part after <code>steamcommunity.com/id/</code> or <code>/profiles/</code>. Used only to link to your achievements page; nothing is fetched automatically.</p>
+            <label>Steam ID<input name="steam" maxlength="64" autocomplete="off" placeholder="Vanity name or 17-digit SteamID64" aria-describedby="steam-help"></label>
+            <p id="steam-help" class="form-help wide">The part after <code>steamcommunity.com/id/</code> or <code>/profiles/</code>. <span class="file-only">Used only to link to your achievements page; nothing is fetched automatically.</span><span class="proxy-only" hidden>Used to refresh your list from Steam each time the app opens and to link to your profile.</span></p>
             <label>Current Infamy rank<input name="infamy" type="number" min="0" max="500" inputmode="numeric" placeholder="Set your current rank"></label>
             <label>Playstyle<select name="playstyle"><option value="solo">Solo</option><option value="crew">With a crew</option></select></label>
             <label>Comfortable difficulty<select name="difficulty"><option>Normal</option><option>Hard</option><option>Very Hard</option><option>OVERKILL</option><option>Mayhem</option><option>Death Wish</option><option>Death Sentence</option></select></label>
@@ -297,9 +311,11 @@
             <button id="export-backup" class="button secondary">Export backup</button>
             <button id="import-settings" class="button secondary">Import / restore</button>
             <a id="steam-link" class="text-button" href="https://steamcommunity.com/" target="_blank" rel="noopener noreferrer" hidden>Open your Steam achievements ↗</a>
+            <button id="fbi-open" class="text-button" type="button" hidden>Look yourself up on FBI Files ↗</button>
           </div>
           <p class="fine-print" id="backup-note"></p>
           <p class="fine-print" id="dataset-note"></p>
+          <p class="fine-print">FBI Files is Overkill’s official stats site. It has no direct links, so the button copies your Steam ID for you to paste into its Suspect Database.</p>
           <div class="danger-zone">
             <button id="reset-data" class="text-button danger-link">Remove everything from this browser</button>
             <span class="fine-print">Clears your list, checkmarks, notes and preferences and returns to the start screen. Export a backup first if you want to keep any of it.</span>
