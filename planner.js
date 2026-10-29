@@ -7,10 +7,56 @@ export const DEFAULT_PREFS = {
   difficulty: 'OVERKILL',
   minutes: 60,
   batchSize: 10,
+  strategy: 'balanced',
+  modePref: 'any',
+  focusHeist: '',
+  skipHeists: [],
   dlc: '',
   mods: '',
   variety: true,
   infamyBreaks: true,
+};
+
+export const MINUTES_RANGE = { min: 15, max: 480 };
+export const BATCH_RANGE = { min: 1, max: 30 };
+
+/**
+ * How the planner ranks heist runs. Each weight multiplies one factor of a run:
+ *   size       targets that share the run
+ *   perTarget  minutes per target (negative: cheaper is better)
+ *   finish     1 when the run clears the heist, falling off with every target it would leave behind
+ *   stretch    skulls above the comfortable difficulty (negative)
+ *   common     average global unlock % / 10, when the list carries it (commonly unlocked = easier)
+ *   crew       targets with crew wording while playing solo (negative)
+ *   mode       +1 when the run matches the stealth/loud preference, -1 when it clashes
+ */
+export const STRATEGIES = {
+  balanced: {
+    label: 'Balanced',
+    summary: 'Weighs shared runs, heists you are close to clearing, your comfortable difficulty and how commonly each target is unlocked.',
+    challenge: true,
+    weights: { size: 8, perTarget: -0.5, finish: 16, stretch: -7, common: 1.5, crew: -6, mode: 10 },
+  },
+  easy: {
+    label: 'Easy wins',
+    summary: 'Short runs at or below your comfortable difficulty, favouring the most commonly unlocked targets. Leaves the hard challenge out.',
+    challenge: false,
+    weights: { size: 3, perTarget: -1.2, finish: 8, stretch: -14, common: 3, crew: -10, mode: 10 },
+  },
+  clusters: {
+    label: 'Biggest clusters',
+    summary: 'Heists with the most targets that can share one run come first, whatever the difficulty.',
+    challenge: true,
+    weights: { size: 18, perTarget: -0.1, finish: 4, stretch: -1, common: 0, crew: -3, mode: 10 },
+  },
+};
+
+export const MODE_PREFS = {
+  any: 'Stealth or loud, whatever fits',
+  stealth: 'Prefer stealth',
+  loud: 'Prefer loud',
+  'stealth-only': 'Stealth only',
+  'loud-only': 'Loud only',
 };
 
 export const DIFFICULTIES = ['Normal', 'Hard', 'Very Hard', 'OVERKILL', 'Mayhem', 'Death Wish', 'Death Sentence'];
@@ -159,8 +205,12 @@ export function cleanPrefs(p = {}) {
     infamy: p.infamy === null || p.infamy === '' || p.infamy === undefined ? null : boundedInt(p.infamy, 0, 500, null),
     playstyle: p.playstyle === 'crew' ? 'crew' : 'solo',
     difficulty: DIFFICULTIES.includes(p.difficulty) ? p.difficulty : 'OVERKILL',
-    minutes: [30, 60, 120].includes(Number(p.minutes)) ? Number(p.minutes) : 60,
-    batchSize: [6, 10, 15].includes(Number(p.batchSize)) ? Number(p.batchSize) : 10,
+    minutes: boundedInt(p.minutes, MINUTES_RANGE.min, MINUTES_RANGE.max, DEFAULT_PREFS.minutes),
+    batchSize: boundedInt(p.batchSize, BATCH_RANGE.min, BATCH_RANGE.max, DEFAULT_PREFS.batchSize),
+    strategy: Object.hasOwn(STRATEGIES, p.strategy) ? p.strategy : DEFAULT_PREFS.strategy,
+    modePref: Object.hasOwn(MODE_PREFS, p.modePref) ? p.modePref : DEFAULT_PREFS.modePref,
+    focusHeist: String(p.focusHeist ?? '').trim().slice(0, 80),
+    skipHeists: [...new Set((Array.isArray(p.skipHeists) ? p.skipHeists : []).filter((h) => typeof h === 'string').map((h) => h.trim().slice(0, 80)).filter(Boolean))].slice(0, 60),
     dlc: String(p.dlc ?? DEFAULT_PREFS.dlc).slice(0, 300),
     mods: String(p.mods ?? DEFAULT_PREFS.mods).slice(0, 1500),
     variety: p.variety !== false,
@@ -299,11 +349,72 @@ export function describeRun(targets, prefs) {
   return lines;
 }
 
+/** Targets the planner may use: active, not Infamy, not on a skipped heist, and not ruled out by a stealth-only / loud-only preference. */
+export function plannable(items, state, prefs) {
+  const skipped = new Set(prefs.skipHeists || []);
+  const excludedMode = prefs.modePref === 'stealth-only' ? 'loud' : prefs.modePref === 'loud-only' ? 'stealth' : null;
+  return items.filter((a) => isActive(state, a) && a.kind !== 'infamy' && !skipped.has(a.heist) && a.mode !== excludedMode);
+}
+
+const runMode = (group) => (group.some((a) => a.mode === 'stealth') ? 'stealth' : group.some((a) => a.mode === 'loud') ? 'loud' : 'any');
+const preferredMode = (modePref) => (modePref.startsWith('stealth') ? 'stealth' : modePref.startsWith('loud') ? 'loud' : null);
+
+/**
+ * Scores every heist run under the chosen strategy and says why each one ranks where it does.
+ * `remainingByHeist` counts every active target on the heist, hard ones included, so "clears" means exactly that.
+ */
+export function rankClusters(clusters, { prefs, remainingByHeist }) {
+  const strategy = STRATEGIES[prefs.strategy] || STRATEGIES.balanced;
+  const w = strategy.weights;
+  const comfortable = SKULLS[prefs.difficulty];
+  const wanted = preferredMode(prefs.modePref || 'any');
+
+  const ranked = clusters.map(({ heist, group }) => {
+    const n = group.length;
+    const perTarget = runMinutes(group) / n;
+    const leftAfter = Math.max(0, (remainingByHeist.get(heist) ?? n) - n);
+    const finish = 1 / (1 + leftAfter);
+    const req = requiredDifficulty(group);
+    const stretch = req ? Math.max(0, SKULLS[req.difficulty] - comfortable) : 0;
+    const known = group.filter((a) => a.rarity !== null);
+    const avgRarity = known.length ? known.reduce((s, a) => s + a.rarity, 0) / known.length : null;
+    const common = avgRarity === null ? 0 : avgRarity / 10;
+    const crew = prefs.playstyle === 'solo' ? group.filter((a) => a.crew).length : 0;
+    const mode = runMode(group);
+    const modeFit = !wanted || mode === 'any' ? 0 : mode === wanted ? 1 : -1;
+
+    const score = w.size * n + w.perTarget * perTarget + w.finish * finish + w.stretch * stretch + w.common * common + w.crew * crew + w.mode * modeFit;
+
+    const reasons = [];
+    if (n > 1) reasons.push(`${n} targets can share one run`);
+    if (leftAfter === 0) reasons.push(`clears ${heist}`);
+    else if (leftAfter <= 2) reasons.push(`leaves only ${leftAfter} on ${heist}`);
+    if (req && stretch === 0) reasons.push(`${req.difficulty} is within your comfort zone`);
+    else if (req) reasons.push(`needs ${req.difficulty}, ${stretch} skull${stretch === 1 ? '' : 's'} above your ${prefs.difficulty}`);
+    if (avgRarity !== null && avgRarity >= 10) reasons.push(`commonly unlocked (${avgRarity.toFixed(0)}% of players)`);
+    else if (avgRarity !== null && avgRarity <= 3) reasons.push(`rare: ${avgRarity.toFixed(1)}% of players have it`);
+    if (modeFit === 1) reasons.push(`a ${mode} run, as you prefer`);
+    else if (modeFit === -1) reasons.push(`a ${mode} run, though you prefer ${wanted}`);
+    if (crew) reasons.push(`${crew === 1 ? 'one target mentions' : `${crew} targets mention`} a crew`);
+    if (perTarget <= 15) reasons.push('quick');
+
+    return { heist, group, score, reasons, mode };
+  });
+
+  return ranked.sort((a, b) => b.score - a.score || b.group.length - a.group.length || a.heist.localeCompare(b.heist));
+}
+
+const sentence = (reasons) => (reasons.length ? `${reasons[0][0].toUpperCase()}${reasons[0].slice(1)}${reasons.length > 1 ? `; ${reasons.slice(1).join('; ')}` : ''}.` : '');
+
 export function buildPlan(items, state, prefs, rotation = 0) {
-  const remaining = items.filter((a) => isActive(state, a) && a.kind !== 'infamy');
+  const strategy = STRATEGIES[prefs.strategy] || STRATEGIES.balanced;
+  const active = items.filter((a) => isActive(state, a) && a.kind !== 'infamy');
+  const remaining = plannable(items, state, prefs);
   const comfortable = SKULLS[prefs.difficulty];
   const stretch = (a) => (SKULLS[a.difficulty] > comfortable ? 5 : 0) + (prefs.playstyle === 'solo' && a.crew ? 12 : 0);
-  const pool = [...remaining].sort((a, b) => stretch(a) - stretch(b));
+  // Loose objectives: comfortable ones first; "Easy wins" also puts short, commonly unlocked ones ahead.
+  const pool = [...remaining].sort((a, b) => stretch(a) - stretch(b)
+    || (prefs.strategy === 'easy' ? a.effort - b.effort || (b.rarity ?? 0) - (a.rarity ?? 0) : 0));
   const spin = (list) => rotate(list, rotation);
 
   const picked = new Set();
@@ -342,12 +453,27 @@ export function buildPlan(items, state, prefs, rotation = 0) {
     if (!byHeist.has(a.heist)) byHeist.set(a.heist, []);
     byHeist.get(a.heist).push(a);
   }
-  const clusters = spin([...byHeist.entries()]
-    .flatMap(([heist, targets]) => splitIntoRuns(targets).map((group) => ({ heist, group })))
-    .sort((a, b) => b.group.length - a.group.length));
+  const remainingByHeist = new Map();
+  for (const a of active) remainingByHeist.set(a.heist, (remainingByHeist.get(a.heist) || 0) + 1);
+  const ranked = rankClusters(
+    [...byHeist.entries()].flatMap(([heist, targets]) => splitIntoRuns(targets).map((group) => ({ heist, group }))),
+    { prefs, remainingByHeist },
+  );
 
-  const [focus, ...rest] = clusters;
-  if (focus) add(focus.heist, 'Heist focus', focus.group, `${focus.group.length === 1 ? 'A remaining target' : `${focus.group.length} remaining targets`} on one heist that can share a run.`);
+  // A pinned heist leads outright. Otherwise "New batch" cycles through the shortlist of best-ranked runs,
+  // so pressing it a few times shows the strong options rather than working down to the weakest.
+  const pinned = ranked.filter((c) => prefs.focusHeist && c.heist === prefs.focusHeist);
+  const others = ranked.filter((c) => !pinned.includes(c));
+  const shortlist = Math.min(others.length, Math.max(4, Math.ceil(others.length / 3)));
+  const offset = shortlist ? rotation % shortlist : 0;
+  const ordered = [...rotate(others.slice(0, shortlist), offset), ...others.slice(shortlist)];
+  const [focus, ...rest] = [...pinned, ...ordered];
+  const pick = focus ? { index: offset + 1, of: shortlist, pinned: pinned.length > 0 } : null;
+
+  if (focus) {
+    const why = sentence(pinned.length ? ['your pinned heist', ...focus.reasons] : focus.reasons) || 'A remaining target on this heist.';
+    add(focus.heist, 'Heist focus', focus.group, why);
+  }
 
   if (prefs.variety) {
     // Warm-up: cheap objectives only. Collectibles tied to a heist with other targets stay with that heist.
@@ -360,12 +486,12 @@ export function buildPlan(items, state, prefs, rotation = 0) {
       { cap: Math.max(1, Math.floor(prefs.batchSize / 3)), shared: false },
     );
     const challenge = spin(pool.filter((a) => a.hard && !picked.has(a.id)));
-    add(challenge[0]?.heist || 'The stretch goal', 'One challenge', challenge, 'A stretch goal for this session. Keep attempts short and come back when you feel ready.', { cap: 1 });
+    if (strategy.challenge) add(challenge[0]?.heist || 'The stretch goal', 'One challenge', challenge, 'A stretch goal for this session. Keep attempts short and come back when you feel ready.', { cap: 1 });
   }
 
-  for (const { heist, group } of rest) {
+  for (const { heist, group, reasons } of rest) {
     if (count <= 0 || minutes <= 0) break;
-    add(heist, 'Another job', group, group.length > 1 ? 'Targets on one heist that can share a run.' : 'A single remaining target on this heist.');
+    add(heist, 'Another job', group, sentence(reasons) || 'A single remaining target on this heist.');
   }
 
   add('Equipment and other objectives', 'Cleanup', spin(pool.filter((a) => !a.hard)), 'Loose ends. Use these as individual objectives or add them to a compatible heist.', { shared: false });
@@ -391,13 +517,21 @@ export function buildPlan(items, state, prefs, rotation = 0) {
     });
   }
 
-  return { source: 'local', runs, minutes: runs.reduce((n, r) => n + r.minutes, 0), budget: prefs.minutes };
+  // `hidden` counts targets kept out of this plan by skipped heists or a stealth-only / loud-only preference.
+  return {
+    source: 'local',
+    runs,
+    minutes: runs.reduce((n, r) => n + r.minutes, 0),
+    budget: prefs.minutes,
+    pick,
+    hidden: active.length - remaining.length,
+  };
 }
 
 /**
  * Replace one target in a plan with another unplanned, still-active achievement.
  * Keeps the same hardness, prefers the same heist and a compatible mode, then the same kind,
- * and avoids crew wording when it can. Removes the target when nothing fits.
+ * and avoids crew wording when it can. Skipped heists and ruled-out modes stay out. Removes the target when nothing fits.
  */
 export function swapTarget(plan, runIndex, id, items, state, prefs = DEFAULT_PREFS) {
   const run = plan.runs[runIndex];
@@ -405,8 +539,8 @@ export function swapTarget(plan, runIndex, id, items, state, prefs = DEFAULT_PRE
   const current = items.find((a) => a.id === id);
   const planned = new Set(plan.runs.flatMap((r) => r.achievementIds));
   const fits = (a) => a.hard === Boolean(current?.hard);
-  const candidates = items
-    .filter((a) => !planned.has(a.id) && isActive(state, a) && a.kind !== 'infamy' && fits(a))
+  const candidates = plannable(items, state, prefs)
+    .filter((a) => !planned.has(a.id) && fits(a))
     .sort((a, b) => Number(a.crew) - Number(b.crew));
   const compatible = (a) => current && (a.mode === 'any' || current.mode === 'any' || a.mode === current.mode) && (a.day === null || current.day === null || a.day === current.day);
   const sameHeist = current && current.heist !== GENERAL ? candidates.filter((a) => a.heist === current.heist && compatible(a)) : [];
@@ -437,9 +571,24 @@ export function heistBreakdown(items, state) {
   return [...map.values()].sort((a, b) => b.remaining - a.remaining || b.total - a.total || a.heist.localeCompare(b.heist));
 }
 
+/** One line saying how a plan was chosen, for the board and the text export. */
+export function describePick(plan, prefs) {
+  const parts = [`Strategy: ${(STRATEGIES[prefs.strategy] || STRATEGIES.balanced).label}`];
+  if (prefs.modePref && prefs.modePref !== 'any') parts.push(MODE_PREFS[prefs.modePref].toLowerCase());
+  if (plan.pick?.pinned) parts.push(`pinned to ${prefs.focusHeist}`);
+  else if (plan.pick?.of > 1) parts.push(`option ${plan.pick.index} of ${plan.pick.of}`);
+  if (prefs.skipHeists?.length) parts.push(`skipping ${prefs.skipHeists.length === 1 ? prefs.skipHeists[0] : `${prefs.skipHeists.length} heists`}`);
+  return parts.join(' · ');
+}
+
 export function planToText(plan, items, state, prefs) {
   const byId = new Map(items.map((a) => [a.id, a]));
-  const lines = [`The Completion Job: next session${prefs.player ? ` for ${prefs.player}` : ''}`, `About ${plan.minutes} minutes planned for a ${plan.budget}-minute session.`, ''];
+  const lines = [
+    `The Completion Job: next session${prefs.player ? ` for ${prefs.player}` : ''}`,
+    `About ${plan.minutes} minutes planned for a ${plan.budget}-minute session.`,
+    describePick(plan, prefs),
+    '',
+  ];
   plan.runs.forEach((run, i) => {
     lines.push(`${i + 1}. ${run.title} (${run.category}${run.minutes ? `, ~${run.minutes} min` : ''})`);
     for (const id of run.achievementIds) {

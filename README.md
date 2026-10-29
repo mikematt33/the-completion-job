@@ -2,17 +2,17 @@
 
 A planning board for the PAYDAY 2 achievements you have not unlocked yet. Enter your Steam ID or import your list, and it groups what is left by heist, builds sessions that fit the time you have, and keeps track as you tick things off. Progress stays in your browser; there is no account to create and nothing to install.
 
-![A session plan: a warm-up run, a Big Bank stealth run with its briefing, and an Infamy break](docs/board.png)
+![The board: planner controls above a session plan with a warm-up run, a GO Bank stealth run that says why it was picked, and an Infamy break](docs/board.png)
 
 ## What it does
 
 The site opens on a start screen that asks for your Steam ID or your achievements file. Once a list is in, there are three views.
 
-The board shows how far along you are, where the remaining work is (achievements per heist), and a plan for your next session. Each run in the plan comes with a short briefing: which difficulty covers every target in it, whether it is a stealth or loud run, which day of a multi-day heist, any time limits, and any loadout conditions. You can swap a target you do not feel like doing, mark a whole run complete, copy the plan as text, or print it.
+The board opens with "Play this next": a plan for your next session, with the controls that steer it right above. Each run in the plan says why it was picked and comes with a short briefing: which difficulty covers every target in it, whether it is a stealth or loud run, which day of a multi-day heist, any time limits, and any loadout conditions. You can swap a target you do not feel like doing, mark a whole run complete, copy the plan as text, print it, or press **Show another option** to see the next-best session. Below the plan, the board shows how far along you are and where the remaining work is (achievements per heist).
 
 The vault lists every remaining achievement with its original Steam description. You can search, filter by heist, type, status, or difficulty, sort by rarity, and group by heist. Each achievement has a notes field, a "set aside for later" option, and links to the PAYDAY wiki and Steam guides.
 
-Preferences hold your name, Steam ID, Infamy rank, playstyle, comfortable difficulty, session length, batch size, DLC, and mods. Session length and batch size decide how much goes into a plan. Preferences also links to your Steam achievements page and to Overkill's FBI Files stats site (which has no direct links, so the button copies your Steam profile link for pasting into its Suspect Database).
+Preferences hold your name, Steam ID, Infamy rank, playstyle, comfortable difficulty, session length, batch size, DLC, and mods, plus the same planning controls as the board: strategy, stealth or loud, focus heist and skipped heists. Session length and batch size decide how much goes into a plan. Preferences also links to your Steam achievements page and to Overkill's FBI Files stats site (which has no direct links, so the button copies your Steam profile link for pasting into its Suspect Database).
 
 **Sign out** in the top bar clears this browser and returns to the start screen, so another player can use the same device.
 
@@ -22,7 +22,23 @@ Difficulty is shown with skulls, the same way the game does it.
 
 It reads the achievement descriptions. From each one it pulls the heist name, the difficulty and whether it says "or above", stealth or loud wording, the day number, time limits, loadout restrictions such as "using only" or "without using", and crew wording. Each target also gets a rough time estimate from its type and conditions.
 
-Targets on the same heist are grouped, then split so a stealth target never shares a run with a loud one and different days stay separate. Targets that share a run only add a few minutes each, so clusters are cheap and the planner favours them. Runs are added until your session length or batch size is used up. With variety on, a session opens with a couple of quick objectives, puts the biggest heist cluster next, adds at most one hard challenge, then fills with other heists. Infamy breaks go at the end.
+Targets on the same heist are grouped, then split so a stealth target never shares a run with a loud one and different days stay separate. Targets that share a run only add a few minutes each.
+
+### Choosing the heist
+
+Every possible run is scored under the strategy you pick, and the best one leads the session. The factors are: how many targets share the run, minutes per target, whether the run clears the heist or nearly does, how many skulls it sits above your comfortable difficulty, how commonly its targets are unlocked (only when the imported list carries global unlock percentages; Steam fetches do not), crew wording when you play solo, and whether it matches your stealth or loud preference. The run's card lists the reasons that applied.
+
+- **Balanced** weighs all of those.
+- **Easy wins** leans hard on difficulty fit, short runs and commonly unlocked targets, and leaves the hard challenge out of the session.
+- **Biggest clusters** is the old behaviour: the most targets in one run wins, whatever the difficulty.
+
+**Show another option** cycles through the top few runs (the board says "option 2 of 4"), so pressing it a few times shows the strong candidates rather than working down to the weakest. The ranking is deterministic: the same list, progress and settings always give the same options.
+
+You can steer it. Focus heist pins a heist to the front regardless of score; **Show another option** then reshuffles only the rest. Skip a heist removes a heist from plans entirely until you take the chip off. Stealth only and Loud only drop the other kind from the plan (targets that say neither stay in); Prefer stealth and Prefer loud only tilt the ranking. The board tells you how many targets a skip or a stealth/loud setting is hiding.
+
+### Fitting the session
+
+Runs are added until your session length or batch size is used up (both are plain number fields in Preferences). With variety on, a session opens with a couple of quick objectives, puts the best-scoring heist run next, adds at most one hard challenge, then fills with other heists. Infamy breaks go at the end.
 
 What it cannot tell you: whether two targets on the same heist can be earned in the same run, whether a solo mod covers a crew achievement, or how long a run will take you. Treat the briefing as a checklist. The "How the planner works" button on the board says the same thing in the app.
 
@@ -89,7 +105,7 @@ Checking something off here does not change anything on Steam.
 
 ## Shortcuts and install
 
-`1`, `2`, `3` switch views, `/` searches, `g` builds a new batch, `r` refreshes from Steam (when a proxy is configured), `b` downloads a backup, `?` shows the full list.
+`1`, `2`, `3` switch views, `/` searches, `g` shows another session option, `r` refreshes from Steam (when a proxy is configured), `b` downloads a backup, `?` shows the full list.
 
 You can install it as an app from the browser menu or from Preferences. It works offline once installed.
 

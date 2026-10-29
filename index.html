@@ -155,6 +155,31 @@
           </div>
         </div>
 
+        <section class="board-section session-section lead" aria-labelledby="session-heading">
+          <div class="section-heading">
+            <div>
+              <h2 id="session-heading">Play this next</h2>
+              <p id="plan-source">Built from your remaining achievements and your preferences</p>
+            </div>
+            <div class="heading-actions">
+              <button id="copy-plan" class="button ghost small">Copy as text</button>
+              <button id="print-plan" class="button ghost small">Print</button>
+              <button id="generate-again" class="button primary small">Show another option</button>
+            </div>
+          </div>
+          <div class="planner-controls" role="group" aria-label="Planner settings">
+            <label>Strategy<select id="plan-strategy"></select></label>
+            <label>Stealth or loud<select id="plan-mode"></select></label>
+            <label>Focus heist<select id="plan-focus"></select></label>
+            <label>Skip a heist<select id="plan-skip-add"></select></label>
+          </div>
+          <p id="plan-strategy-help" class="planner-help"></p>
+          <div id="plan-skips" class="chip-row" hidden></div>
+          <div class="session-meta"><span id="session-size"></span></div>
+          <div id="session-grid" class="session-grid"></div>
+          <p class="planning-note">Each run says why it was picked. Runs are split so stealth and loud targets, and different days of a heist, never share one. Time estimates are rough. Read each run's briefing before you start.</p>
+        </section>
+
         <section class="hero" aria-label="Overall achievement progress">
           <div class="hero-number">
             <strong id="progress-percent">81.5<span>%</span></strong>
@@ -172,7 +197,7 @@
               <div><dt>Total</dt><dd id="hero-total">1,342</dd></div>
             </dl>
             <div class="hero-actions">
-              <button id="generate" class="button primary">Build my next session</button>
+              <button id="generate" class="button primary">Back to the plan</button>
               <button id="go-vault" class="button ghost">Open the vault</button>
             </div>
           </div>
@@ -194,23 +219,6 @@
             <button id="breakdown-toggle" class="button ghost small">Show all heists</button>
           </div>
           <div id="breakdown" class="breakdown"></div>
-        </section>
-
-        <section class="board-section session-section" aria-labelledby="session-heading">
-          <div class="section-heading">
-            <div>
-              <h2 id="session-heading">The next few jobs</h2>
-              <p id="plan-source">Built from your remaining achievements and your preferences</p>
-            </div>
-            <div class="heading-actions">
-              <button id="copy-plan" class="button ghost small">Copy as text</button>
-              <button id="print-plan" class="button ghost small">Print</button>
-              <button id="generate-again" class="button secondary small">New batch</button>
-            </div>
-          </div>
-          <div class="session-meta"><span id="session-size"></span></div>
-          <div id="session-grid" class="session-grid"></div>
-          <p class="planning-note">Runs are split so stealth and loud targets, and different days of a heist, never share one. Time estimates are rough. Read each run's briefing before you start.</p>
         </section>
 
         <div class="board-columns">
@@ -295,10 +303,20 @@
             <p id="infamy-help" class="form-help wide"></p>
             <label>Playstyle<select name="playstyle"><option value="solo">Solo</option><option value="crew">With a crew</option></select></label>
             <label>Comfortable difficulty<select name="difficulty"><option>Normal</option><option>Hard</option><option>Very Hard</option><option>OVERKILL</option><option>Mayhem</option><option>Death Wish</option><option>Death Sentence</option></select></label>
-            <label>Session length<select name="minutes"><option value="30">About 30 minutes</option><option value="60">About an hour</option><option value="120">Two hours or more</option></select></label>
-            <label>Targets per batch<select name="batchSize"><option value="6">6, a light session</option><option value="10">10, a varied batch</option><option value="15">15, a bigger plan</option></select></label>
+            <label>Session length (minutes)<input name="minutes" type="number" min="15" max="480" step="5" inputmode="numeric" required></label>
+            <label>Targets per batch<input name="batchSize" type="number" min="1" max="30" inputmode="numeric" required></label>
             <label class="wide">DLC owned<input name="dlc" maxlength="300" placeholder="All DLC, or list the ones you own"></label>
             <label class="wide">Mods and other notes<textarea name="mods" maxlength="1500" rows="3" placeholder="Solo mods, pacing notes, anything worth remembering"></textarea></label>
+          </div>
+          <h3 class="form-section">How heists are chosen</h3>
+          <p class="form-help">The same controls sit above the plan on the board. Changes there apply straight away; here they apply when you save.</p>
+          <div class="form-grid">
+            <label>Strategy<select name="strategy"></select></label>
+            <label>Stealth or loud<select name="modePref"></select></label>
+            <p id="strategy-help" class="form-help wide"></p>
+            <label>Focus heist<select name="focusHeist"></select></label>
+            <label>Skip a heist<select id="pref-skip-add"></select></label>
+            <div id="pref-skips" class="chip-row wide" hidden></div>
           </div>
           <label class="check-setting"><input type="checkbox" name="variety"> Mix easier jobs, heist objectives, and one harder challenge</label>
           <label class="check-setting"><input type="checkbox" name="infamyBreaks"> Add small Infamy breaks between achievement batches</label>
@@ -351,8 +369,10 @@
     <dl class="how-list">
       <div><dt>Reading each achievement</dt><dd>The description is scanned for the heist name, the difficulty and whether it says "or above", stealth or loud wording, the day of a multi-day heist, time limits, loadout restrictions ("using only", "without using"), and crew wording.</dd></div>
       <div><dt>Splitting runs</dt><dd>Targets on the same heist are grouped, then split so a stealth target never shares a run with a loud one, and different days stay separate. Each run says which difficulty covers every target in it.</dd></div>
+      <div><dt>Choosing the heist</dt><dd>Every possible run is scored under your strategy: how many targets share it, minutes per target, whether it clears the heist or nearly does, how far above your comfortable difficulty it sits, how commonly its targets are unlocked (when the list carries that), crew wording when you play solo, and whether it matches your stealth or loud preference. The best-scoring run leads the session and its card says why. <strong>Show another option</strong> cycles through the top few instead of working down to the weakest.</dd></div>
+      <div><dt>Steering it</dt><dd>Pin a focus heist to put it first regardless of score. Skip heists you do not feel like playing and they leave the plan entirely. "Stealth only" or "Loud only" removes the other kind; "Prefer" just tilts the ranking.</dd></div>
       <div><dt>Fitting your session</dt><dd>Each target gets a rough time estimate from its type and conditions. Targets that share a run only add a few minutes each. Runs are added until your session length or batch size is used up.</dd></div>
-      <div><dt>Keeping it varied</dt><dd>With variety on, a session starts with one or two quick objectives, puts the biggest heist cluster next, adds at most one hard challenge, then fills with other heists. Infamy breaks go at the end.</dd></div>
+      <div><dt>Keeping it varied</dt><dd>With variety on, a session starts with one or two quick objectives, puts the best heist run next, adds at most one hard challenge (not under Easy wins), then fills with other heists. Infamy breaks go at the end.</dd></div>
       <div><dt>What it cannot know</dt><dd>Whether two targets on the same heist can be earned in the same run, whether a solo mod covers a crew achievement, or how long a run will take you. Treat the briefing as a checklist.</dd></div>
     </dl>
   </dialog>
@@ -387,7 +407,7 @@
     <dl class="shortcut-list">
       <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Board, vault, preferences</dd></div>
       <div><dt><kbd>/</kbd></dt><dd>Search the vault</dd></div>
-      <div><dt><kbd>g</kbd></dt><dd>Build a new session batch</dd></div>
+      <div><dt><kbd>g</kbd></dt><dd>Show another session option</dd></div>
       <div class="proxy-only" hidden><dt><kbd>r</kbd></dt><dd>Refresh from Steam</dd></div>
       <div><dt><kbd>b</kbd></dt><dd>Download a backup</dd></div>
       <div><dt><kbd>?</kbd></dt><dd>Show this list</dd></div>

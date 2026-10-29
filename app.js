@@ -1,6 +1,6 @@
 import {
-  DEFAULT_PREFS, DIFFICULTIES, KIND_LABELS, GENERAL, SKULLS, NO_DIFFICULTY, MODE_LABELS,
-  cleanPrefs, normalizeDataset, compareDatasets, buildPlan, runMinutes, describeRun,
+  DEFAULT_PREFS, DIFFICULTIES, KIND_LABELS, GENERAL, SKULLS, NO_DIFFICULTY, MODE_LABELS, STRATEGIES, MODE_PREFS,
+  cleanPrefs, normalizeDataset, compareDatasets, buildPlan, runMinutes, describeRun, describePick,
   swapTarget, heistBreakdown, planToText, isActive, steamProfileUrl,
 } from './planner.js';
 
@@ -144,7 +144,18 @@ function restorePlan(rawPlan, catalogue = items, st = state, prefs = state?.pref
     })
     .filter((r, i) => r.achievementIds.length || !rawPlan.runs[i].achievementIds.length);
   if (!runs.length) return null;
-  return { source: 'local', runs, minutes: runs.reduce((n, r) => n + r.minutes, 0), budget: Number.isFinite(rawPlan.budget) ? rawPlan.budget : prefs.minutes };
+  const rawPick = rawPlan.pick;
+  const pick = rawPick && Number.isInteger(rawPick.index) && Number.isInteger(rawPick.of) && rawPick.index >= 1 && rawPick.of >= 0
+    ? { index: rawPick.index, of: rawPick.of, pinned: Boolean(rawPick.pinned) }
+    : null;
+  return {
+    source: 'local',
+    runs,
+    minutes: runs.reduce((n, r) => n + r.minutes, 0),
+    budget: Number.isFinite(rawPlan.budget) ? rawPlan.budget : prefs.minutes,
+    pick,
+    hidden: Number.isInteger(rawPlan.hidden) && rawPlan.hidden >= 0 ? rawPlan.hidden : 0,
+  };
 }
 
 // ---------- navigation ----------
@@ -286,12 +297,16 @@ function renderBreakdown() {
 
 function renderPlan() {
   if (!state.plan) state.plan = buildPlan(items, state, state.prefs, state.rotation);
+  renderPlannerControls();
   const byId = new Map(items.map((a) => [a.id, a]));
-  const { runs, minutes, budget } = state.plan;
+  const { runs, minutes, budget, hidden = 0 } = state.plan;
   const targetCount = runs.reduce((n, r) => n + r.achievementIds.length, 0);
   const doneCount = runs.reduce((n, r) => n + r.achievementIds.filter((id) => state.completed[id]).length, 0);
   const fit = minutes > budget * 1.25 ? ', more than one sitting' : '';
-  $('#session-size').textContent = targetCount ? `${plural(targetCount, 'target')}, about ${minutes} min planned for a ${budget}-minute session${fit}${doneCount ? `, ${doneCount} done` : ''}` : '';
+  $('#plan-source').textContent = describePick(state.plan, state.prefs);
+  $('#session-size').textContent = targetCount
+    ? `${plural(targetCount, 'target')}, about ${minutes} min planned for a ${budget}-minute session${fit}${doneCount ? `, ${doneCount} done` : ''}${hidden ? ` · ${plural(hidden, 'target')} hidden by your skips or stealth/loud setting` : ''}`
+    : '';
   $('#copy-plan').disabled = $('#print-plan').disabled = !targetCount;
 
   $('#session-grid').innerHTML = runs.length ? runs.map((run, i) => {
@@ -300,7 +315,7 @@ function renderPlan() {
     // Contract-card style: show the run's highest stated risk as skulls.
     const peak = targets.map((a) => a.difficulty).filter((d) => SKULLS[d] !== undefined).sort((a, b) => SKULLS[b] - SKULLS[a])[0];
     const briefing = (run.briefing || []).filter(Boolean);
-    return `<article class="job-card ${allDone ? 'done' : ''}">
+    return `<article class="job-card ${allDone ? 'done' : ''} ${run.category === 'Heist focus' ? 'focus' : ''}">
       <div class="job-top">
         <div class="job-kicker"><span>Run ${i + 1} · ${esc(run.category)}</span>${peak ? skulls(peak, { label: false }) : ''}</div>
         <h3>${esc(run.title)}</h3>
@@ -319,7 +334,54 @@ function renderPlan() {
       ${targets.length ? `<div class="job-actions"><button class="text-button" data-run-done="${i}">${allDone ? 'Reopen this run' : 'Mark run complete'}</button></div>` : ''}
     </article>`;
   }).join('')
-    : '<div class="empty-state"><strong>No targets in this queue.</strong>All imported achievements are checked off or set aside. Review the vault or import your next list.</div>';
+    : `<div class="empty-state"><strong>No targets in this queue.</strong>${hidden ? `${plural(hidden, 'target')} ${hidden === 1 ? 'is' : 'are'} out of the plan because of skipped heists or your stealth/loud setting. Remove a skip or widen that setting to see more.` : 'All imported achievements are checked off or set aside. Review the vault or import your next list.'}</div>`;
+}
+
+/** Fills the heist pickers, strategy help and skip chips on both the board and the Preferences page from the current prefs. */
+function renderPlannerControls() {
+  const prefs = state.prefs;
+  const form = $('#preferences-form');
+  const option = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
+  const open = heistBreakdown(items, state)
+    .filter((r) => r.remaining > 0)
+    .sort((a, b) => (a.heist === GENERAL) - (b.heist === GENERAL) || a.heist.localeCompare(b.heist));
+  const skipped = new Set(prefs.skipHeists);
+
+  const strategyOptions = Object.entries(STRATEGIES).map(([k, s]) => option(k, s.label, k === prefs.strategy)).join('');
+  const modeOptions = Object.entries(MODE_PREFS).map(([k, label]) => option(k, label, k === prefs.modePref)).join('');
+  // A pinned heist that has since been cleared or skipped still shows so the setting can be seen and undone.
+  const focusable = open.filter((r) => r.heist !== GENERAL && !skipped.has(r.heist));
+  const stale = prefs.focusHeist && !focusable.some((r) => r.heist === prefs.focusHeist);
+  const focusOptions = option('', 'Let the planner choose', !prefs.focusHeist)
+    + (stale ? option(prefs.focusHeist, `${prefs.focusHeist} (nothing left to plan)`, true) : '')
+    + focusable.map((r) => option(r.heist, `${r.heist} (${r.remaining})`, r.heist === prefs.focusHeist)).join('');
+  const skipOptions = option('', 'Skip a heist…', true) + open.filter((r) => !skipped.has(r.heist)).map((r) => option(r.heist, `${r.heist} (${r.remaining})`, false)).join('');
+  const chips = prefs.skipHeists.length
+    ? `<span>Skipping:</span>${prefs.skipHeists.map((h) => `<button type="button" class="chip" data-unskip="${esc(h)}" title="Stop skipping ${esc(h)}">${esc(h)}<span aria-hidden="true">×</span><span class="sr-only">, stop skipping</span></button>`).join('')}`
+    : '';
+
+  $('#plan-strategy').innerHTML = strategyOptions;
+  $('#plan-mode').innerHTML = modeOptions;
+  $('#plan-focus').innerHTML = focusOptions;
+  $('#plan-skip-add').innerHTML = skipOptions;
+  $('#plan-strategy-help').textContent = (STRATEGIES[prefs.strategy] || STRATEGIES.balanced).summary;
+  $('#plan-skips').innerHTML = chips;
+  $('#plan-skips').hidden = !chips;
+
+  // The Preferences form applies on save, so while that page is open an unsaved choice survives a re-render when it is still offered.
+  const keep = view === 'preferences';
+  const refill = (el, html) => {
+    const previous = el.value;
+    el.innerHTML = html;
+    if (keep && previous && [...el.options].some((o) => o.value === previous)) el.value = previous;
+  };
+  refill(form.elements.strategy, strategyOptions);
+  refill(form.elements.modePref, modeOptions);
+  refill(form.elements.focusHeist, focusOptions);
+  $('#pref-skip-add').innerHTML = skipOptions;
+  $('#strategy-help').textContent = (STRATEGIES[form.elements.strategy.value] || STRATEGIES.balanced).summary;
+  $('#pref-skips').innerHTML = chips;
+  $('#pref-skips').hidden = !chips;
 }
 
 function renderActivity() {
@@ -540,11 +602,26 @@ function swap(runIndex, id) {
 }
 
 function regenerate() {
-  state.rotation += 3;
+  state.rotation += 1;
   state.plan = buildPlan(items, state, state.prefs, state.rotation);
   save();
   renderPlan();
-  notify('A fresh batch is on the board.');
+  const { pick } = state.plan;
+  notify(pick?.pinned
+    ? `${state.prefs.focusHeist} stays pinned; the rest of the session was reshuffled.`
+    : pick?.of > 1 ? `Option ${pick.index} of ${pick.of} is on the board.` : 'A fresh batch is on the board.');
+}
+
+/** Applies a planner setting from the board or a skip chip: rebuilds the plan from the top option and keeps both control surfaces in step. */
+function updatePlanPrefs(patch, message) {
+  const prefs = cleanPrefs({ ...state.prefs, ...patch });
+  if (prefs.skipHeists.includes(prefs.focusHeist)) prefs.focusHeist = '';
+  state.prefs = prefs;
+  state.rotation = 0;
+  state.plan = buildPlan(items, state, state.prefs, state.rotation);
+  save();
+  render();
+  if (message) notify(message);
 }
 
 function download(name, content, type = 'application/json') {
@@ -731,7 +808,7 @@ function openImport() {
 // ---------- events ----------
 
 document.addEventListener('click', (e) => {
-  const target = e.target.closest('[data-view],[data-detail],[data-swap],[data-run-done]');
+  const target = e.target.closest('[data-view],[data-detail],[data-swap],[data-run-done],[data-unskip]');
   if (!target) return;
   if (target.dataset.view) {
     const hasFilters = target.dataset.status || target.dataset.heist !== undefined;
@@ -739,6 +816,7 @@ document.addEventListener('click', (e) => {
   } else if (target.dataset.detail) detail(target.dataset.detail);
   else if (target.dataset.swap) swap(Number(target.dataset.run), target.dataset.swap);
   else if (target.dataset.runDone !== undefined) toggleRun(Number(target.dataset.runDone));
+  else if (target.dataset.unskip) updatePlanPrefs({ skipHeists: state.prefs.skipHeists.filter((h) => h !== target.dataset.unskip) }, `${target.dataset.unskip} is back in the running.`);
 });
 
 document.addEventListener('change', (e) => {
@@ -747,8 +825,18 @@ document.addEventListener('change', (e) => {
 
 $('#go-vault').onclick = () => setView('vault');
 $('#profile-button').onclick = () => setView('preferences');
-$('#generate').onclick = regenerate;
+$('#generate').onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 $('#generate-again').onclick = regenerate;
+$('#plan-strategy').onchange = (e) => updatePlanPrefs({ strategy: e.target.value }, `${STRATEGIES[e.target.value]?.label || 'Balanced'} strategy. The plan has been rebuilt.`);
+$('#plan-mode').onchange = (e) => updatePlanPrefs({ modePref: e.target.value });
+$('#plan-focus').onchange = (e) => updatePlanPrefs({ focusHeist: e.target.value }, e.target.value ? `${e.target.value} leads the session until you unpin it.` : 'The planner is choosing the heist again.');
+for (const id of ['plan-skip-add', 'pref-skip-add']) {
+  $(`#${id}`).onchange = (e) => {
+    const heist = e.target.value;
+    if (heist) updatePlanPrefs({ skipHeists: [...state.prefs.skipHeists, heist] }, `${heist} is skipped until you remove it from the list.`);
+  };
+}
+$('#preferences-form').elements.strategy.onchange = (e) => { $('#strategy-help').textContent = (STRATEGIES[e.target.value] || STRATEGIES.balanced).summary; };
 $('#breakdown-toggle').onclick = () => { breakdownExpanded = !breakdownExpanded; renderBreakdown(); };
 $('#copy-plan').onclick = () => copyOrDownload(planToText(state.plan, items, state, state.prefs), 'completion-job-session.txt', 'Session plan copied.');
 $('#print-plan').onclick = () => window.print();
@@ -771,11 +859,15 @@ $('#shortcuts-open').onclick = () => $('#shortcuts-dialog').showModal();
 $('#preferences-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const form = e.target;
-  state.prefs = cleanPrefs({ ...Object.fromEntries(new FormData(form)), variety: form.elements.variety.checked, infamyBreaks: form.elements.infamyBreaks.checked });
+  // Skipped heists are edited through their chips, so they come from the current prefs rather than the form.
+  state.prefs = cleanPrefs({ ...state.prefs, ...Object.fromEntries(new FormData(form)), variety: form.elements.variety.checked, infamyBreaks: form.elements.infamyBreaks.checked });
+  if (state.prefs.skipHeists.includes(state.prefs.focusHeist)) state.prefs.focusHeist = '';
+  state.rotation = 0;
   state.plan = null;
   save();
   render();
-  notify('Preferences saved. Your queue is updated.');
+  fillPreferences();
+  notify('Preferences saved. Your plan is updated.');
 });
 
 $('#how-open').onclick = () => $('#how-dialog').showModal();

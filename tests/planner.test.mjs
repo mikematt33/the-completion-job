@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import {
   normalizeDataset, buildPlan, DEFAULT_PREFS, classify, readConditions, splitIntoRuns, runMinutes,
   requiredDifficulty, describeRun, swapTarget, heistBreakdown, planToText, cleanPrefs, steamProfileUrl, compareDatasets,
+  rankClusters, plannable, describePick, STRATEGIES, MODE_PREFS,
 } from '../planner.js';
 
 const input = JSON.parse(await readFile(new URL('./fixtures/sample.json', import.meta.url), 'utf8'));
@@ -163,6 +164,132 @@ test('planner excludes completed and set-aside targets, including timestamped co
   }
   const done = Object.fromEntries(items.map((a) => [a.id, true]));
   assert.equal(buildPlan(items, { completed: done, later: {} }, DEFAULT_PREFS).runs.length, 0);
+});
+
+const focusRun = (plan) => plan.runs.find((r) => r.category === 'Heist focus');
+const names = (run) => run.achievementIds.map((id) => items.find((a) => a.id === id).name);
+
+test('ranking scores every heist run and explains the order', () => {
+  const byHeist = new Map();
+  for (const a of items.filter((a) => !a.hard && a.heist !== 'General challenges' && a.kind !== 'infamy')) byHeist.set(a.heist, [...(byHeist.get(a.heist) || []), a]);
+  const clusters = [...byHeist.entries()].flatMap(([heist, targets]) => splitIntoRuns(targets).map((group) => ({ heist, group })));
+  const remainingByHeist = new Map(heistBreakdown(items, state).map((r) => [r.heist, r.remaining]));
+  const ranked = rankClusters(clusters, { prefs: DEFAULT_PREFS, remainingByHeist });
+  assert.equal(ranked.length, clusters.length);
+  for (let i = 1; i < ranked.length; i++) assert.ok(ranked[i - 1].score >= ranked[i].score, 'sorted by score');
+  // GO Bank: three targets in one stealth run that clears the heist.
+  assert.equal(ranked[0].heist, 'GO Bank');
+  assert.match(ranked[0].reasons.join('; '), /3 targets can share one run; clears GO Bank/);
+  const bigBankLoud = ranked.find((c) => c.heist === 'Big Bank' && c.mode === 'loud');
+  assert.ok(bigBankLoud.score < ranked[0].score);
+  // A comfortable difficulty below the run's requirement is called out, and the gap counts against it.
+  const hard = rankClusters(clusters, { prefs: { ...DEFAULT_PREFS, difficulty: 'Hard' }, remainingByHeist });
+  const nightclub = hard.find((c) => c.heist === 'Nightclub');
+  assert.match(nightclub.reasons.join('; '), /needs OVERKILL, 2 skulls above your Hard/);
+  assert.ok(nightclub.score < ranked.find((c) => c.heist === 'Nightclub').score);
+  // A stealth preference lifts stealth runs and says so; a loud one marks the clash.
+  const stealth = rankClusters(clusters, { prefs: { ...DEFAULT_PREFS, modePref: 'stealth' }, remainingByHeist });
+  assert.match(stealth[0].reasons.join('; '), /stealth run, as you prefer/);
+  const loud = rankClusters(clusters, { prefs: { ...DEFAULT_PREFS, modePref: 'loud' }, remainingByHeist });
+  assert.match(loud.find((c) => c.heist === 'GO Bank').reasons.join('; '), /though you prefer loud/);
+  assert.ok(loud.find((c) => c.heist === 'Big Bank' && c.mode === 'loud').score > bigBankLoud.score);
+});
+
+test('every strategy is complete and "Easy wins" leaves the hard challenge out', () => {
+  for (const [key, s] of Object.entries(STRATEGIES)) {
+    assert.ok(s.label && s.summary && typeof s.challenge === 'boolean');
+    for (const k of ['size', 'perTarget', 'finish', 'stretch', 'common', 'crew', 'mode']) assert.equal(typeof s.weights[k], 'number', `${key}.${k}`);
+    const plan = buildPlan(items, state, { ...DEFAULT_PREFS, strategy: key, minutes: 480, batchSize: 30 }, 0);
+    assert.ok(plan.runs.length > 0);
+    const hasChallenge = plan.runs.some((r) => r.category === 'One challenge');
+    assert.equal(hasChallenge, s.challenge, `${key} challenge`);
+  }
+  // Biggest clusters ignores difficulty: with Normal as the comfort level it still leads with the largest run.
+  const clusters = buildPlan(items, state, { ...DEFAULT_PREFS, strategy: 'clusters', difficulty: 'Normal' }, 0);
+  assert.equal(focusRun(clusters).achievementIds.length, 3);
+  // Easy wins at Normal prefers runs with no difficulty gap over the Big Bank OVERKILL cluster.
+  const easy = buildPlan(items, state, { ...DEFAULT_PREFS, strategy: 'easy', difficulty: 'Normal' }, 0);
+  assert.notEqual(focusRun(easy).title, 'Big Bank');
+  assert.match(focusRun(easy).why, /^[A-Z0-9].*\.$/, 'reads as a sentence');
+});
+
+test('"Show another option" cycles through the shortlist and reports where it is', () => {
+  const first = buildPlan(items, state, DEFAULT_PREFS, 0);
+  assert.deepEqual(first.pick, { index: 1, of: 4, pinned: false });
+  const seen = new Set();
+  for (let rotation = 0; rotation < first.pick.of; rotation++) {
+    const plan = buildPlan(items, state, DEFAULT_PREFS, rotation);
+    assert.equal(plan.pick.index, rotation + 1);
+    seen.add(focusRun(plan).title + names(focusRun(plan)).join());
+  }
+  assert.equal(seen.size, first.pick.of, 'each option leads with a different run');
+  assert.equal(buildPlan(items, state, DEFAULT_PREFS, first.pick.of).pick.index, 1, 'wraps around');
+  assert.match(describePick(first, DEFAULT_PREFS), /Strategy: Balanced · option 1 of 4/);
+  assert.match(planToText(first, items, state, DEFAULT_PREFS), /option 1 of 4/);
+});
+
+test('a pinned heist leads the plan; skipped heists and ruled-out modes leave it entirely', () => {
+  const pinned = buildPlan(items, state, { ...DEFAULT_PREFS, focusHeist: 'Rats' }, 0);
+  assert.equal(focusRun(pinned).title, 'Rats');
+  assert.match(focusRun(pinned).why, /^Your pinned heist/);
+  assert.equal(pinned.pick.pinned, true);
+  assert.match(describePick(pinned, { ...DEFAULT_PREFS, focusHeist: 'Rats' }), /pinned to Rats/);
+  // Pinning stays pinned across "another option" presses.
+  assert.equal(focusRun(buildPlan(items, state, { ...DEFAULT_PREFS, focusHeist: 'Rats' }, 5)).title, 'Rats');
+  // A pin on a heist with nothing left falls back to the ranking.
+  const gone = buildPlan(items, state, { ...DEFAULT_PREFS, focusHeist: 'Nowhere' }, 0);
+  assert.equal(gone.pick.pinned, false);
+
+  const skipPrefs = { ...DEFAULT_PREFS, skipHeists: ['GO Bank', 'Big Bank'], minutes: 480, batchSize: 30 };
+  const skipped = buildPlan(items, state, skipPrefs, 0);
+  const heists = new Set(skipped.runs.flatMap((r) => r.achievementIds).map((id) => items.find((a) => a.id === id).heist));
+  assert.ok(!heists.has('GO Bank') && !heists.has('Big Bank'));
+  assert.equal(skipped.hidden, items.filter((a) => ['GO Bank', 'Big Bank'].includes(a.heist)).length);
+  assert.match(describePick(skipped, skipPrefs), /skipping 2 heists/);
+  assert.equal(plannable(items, state, skipPrefs).length, items.filter((a) => a.kind !== 'infamy').length - skipped.hidden);
+
+  for (const [pref, banned] of [['stealth-only', 'loud'], ['loud-only', 'stealth']]) {
+    const plan = buildPlan(items, state, { ...DEFAULT_PREFS, modePref: pref, minutes: 480, batchSize: 30 }, 0);
+    const modes = plan.runs.flatMap((r) => r.achievementIds).map((id) => items.find((a) => a.id === id).mode);
+    assert.ok(!modes.includes(banned), `${pref} planned a ${banned} target`);
+    assert.equal(plan.hidden, items.filter((a) => a.kind !== 'infamy' && a.mode === banned).length);
+  }
+  assert.ok(Object.keys(MODE_PREFS).includes('any'));
+
+  // Swaps never bring a skipped heist or a ruled-out mode back in.
+  for (const [i, run] of skipped.runs.entries()) {
+    for (const id of run.achievementIds) {
+      const { replacement } = swapTarget(skipped, i, id, items, state, skipPrefs);
+      if (replacement) assert.ok(!skipPrefs.skipHeists.includes(replacement.heist));
+    }
+  }
+  const stealthOnly = { ...DEFAULT_PREFS, modePref: 'stealth-only' };
+  const stealthPlan = buildPlan(items, state, stealthOnly, 0);
+  for (const [i, run] of stealthPlan.runs.entries()) {
+    for (const id of run.achievementIds) {
+      const { replacement } = swapTarget(stealthPlan, i, id, items, state, stealthOnly);
+      if (replacement) assert.notEqual(replacement.mode, 'loud');
+    }
+  }
+});
+
+test('cleanPrefs bounds the new planning fields and keeps free-form session sizes', () => {
+  const p = cleanPrefs({ minutes: 45, batchSize: 7, strategy: 'easy', modePref: 'loud-only', focusHeist: ' Rats ', skipHeists: ['Big Bank', 'Big Bank', '', 42, ' GO Bank '] });
+  assert.equal(p.minutes, 45);
+  assert.equal(p.batchSize, 7);
+  assert.equal(p.strategy, 'easy');
+  assert.equal(p.modePref, 'loud-only');
+  assert.equal(p.focusHeist, 'Rats');
+  assert.deepEqual(p.skipHeists, ['Big Bank', 'GO Bank']);
+  const bad = cleanPrefs({ minutes: 5, batchSize: 99, strategy: 'yolo', modePref: 'quiet', skipHeists: 'Big Bank' });
+  assert.equal(bad.minutes, DEFAULT_PREFS.minutes);
+  assert.equal(bad.batchSize, DEFAULT_PREFS.batchSize);
+  assert.equal(bad.strategy, 'balanced');
+  assert.equal(bad.modePref, 'any');
+  assert.deepEqual(bad.skipHeists, []);
+  assert.equal(cleanPrefs({ minutes: '90' }).minutes, 90);
+  assert.equal(cleanPrefs({ strategy: 'constructor' }).strategy, 'balanced');
+  assert.deepEqual(cleanPrefs({}).skipHeists, []);
 });
 
 test('swapTarget keeps hardness and compatibility, recomputes the run, and removes when nothing fits', () => {

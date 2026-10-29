@@ -327,6 +327,32 @@ button.stat:hover { border-color: var(--line-strong); background: var(--surface-
 
 /* ---------- session plan ---------- */
 
+.session-section.lead { margin-top: 0; }
+.planner-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; margin-bottom: 10px; }
+.planner-controls label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); min-width: 0; }
+.planner-controls select { width: 100%; }
+.planner-help { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 90ch; }
+.chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s, color 0.15s;
+}
+.chip:hover { border-color: var(--accent); color: var(--ink); }
+.chip > span[aria-hidden] { color: var(--muted); font-size: 16px; line-height: 1; }
+.chip:hover > span[aria-hidden] { color: var(--danger); }
+.form-section { font-size: 20px; margin-top: 8px; }
+.form-section + .form-help { margin: 8px 0 0; }
+.form-grid .chip-row { margin: -6px 0 0; }
 .session-meta { font-size: 14px; color: var(--muted); margin: -6px 0 14px; min-height: 1em; }
 .session-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .job-card {
@@ -339,6 +365,8 @@ button.stat:hover { border-color: var(--line-strong); background: var(--surface-
   overflow: hidden;
 }
 .job-card.done { opacity: 0.72; }
+.job-card.focus { border-color: var(--accent-deep); box-shadow: 0 0 0 1px var(--accent-soft), 0 12px 30px rgba(0, 0, 0, 0.35); }
+.job-card.focus .job-top { background: linear-gradient(180deg, var(--accent-soft), transparent 80%); }
 .job-top { padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .job-kicker { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
 .job-top h3 { font-size: 24px; }
@@ -671,6 +699,7 @@ code.block em { font-style: normal; color: var(--accent); }
   .hero { gap: 28px; padding: 28px 30px 34px; }
   .hero-number strong { font-size: 120px; }
   .session-grid { grid-template-columns: repeat(2, 1fr); }
+  .planner-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -735,6 +764,7 @@ code.block em { font-style: normal; color: var(--accent); }
   .row-title { font-size: 15px; }
   .tag { max-width: 150px; }
   .filters { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .planner-controls { gap: 8px; }
   .panel { padding: 20px 18px; }
   .modal { padding: 24px 20px; }
   .modal h2 { font-size: 28px; }
@@ -749,7 +779,7 @@ code.block em { font-style: normal; color: var(--accent); }
   html, body { background: #fff; color: #111; }
   .skull .hole { fill: #fff; }
   .risk-2 { color: #8a7a1a; }
-  .sidebar, .topbar, .page-heading, .hero, .stats, .board-columns, .main-footer, .planning-note, .toast, .heading-actions, .job-actions, .swap, .check, #breakdown-heading, .breakdown, #breakdown-toggle, .board-section:not(.session-section), dialog { display: none !important; }
+  .sidebar, .topbar, .page-heading, .hero, .stats, .board-columns, .main-footer, .planning-note, .toast, .heading-actions, .job-actions, .swap, .check, #breakdown-heading, .breakdown, #breakdown-toggle, .board-section:not(.session-section), .planner-controls, .planner-help, .chip-row, dialog { display: none !important; }
   .workspace { margin: 0; }
   main { padding: 0; max-width: none; }
   .board-section { margin-top: 0; }
