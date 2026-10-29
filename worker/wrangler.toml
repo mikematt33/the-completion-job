@@ -1,0 +1,12 @@
+name = "completion-job-steam"
+main = "index.js"
+compatibility_date = "2024-09-01"
+workers_dev = true
+preview_urls = false
+
+# Origins allowed to call the proxy. Add your own Pages address if you fork the project.
+[vars]
+ALLOWED_ORIGINS = "https://mikematt33.github.io,http://127.0.0.1:4173,http://localhost:4173"
+
+# The Steam API key is a secret, never a var:
+#   npx wrangler secret put STEAM_API_KEY

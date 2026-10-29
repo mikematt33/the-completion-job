@@ -1,11 +1,13 @@
 import {
   DEFAULT_PREFS, DIFFICULTIES, KIND_LABELS, GENERAL, SKULLS, NO_DIFFICULTY, MODE_LABELS,
-  cleanPrefs, normalizeDataset, buildPlan,
+  cleanPrefs, normalizeDataset, compareDatasets, buildPlan, runMinutes, describeRun,
   swapTarget, heistBreakdown, planToText, isActive, steamProfileUrl,
 } from './planner.js';
 
 const STORAGE_KEY = 'the-completion-job.v1';
 const PAGE_SIZE = 30;
+// Address of the deployed Steam proxy (see worker/). Leave empty to offer file import only.
+const STEAM_PROXY_URL = 'https://completion-job-steam.mikematt33.workers.dev/';
 const $ = (selector) => document.querySelector(selector);
 
 let dataset = null;
@@ -19,6 +21,7 @@ let toastAction = null;
 let installPrompt = null;
 let savedAt = null;
 let backedUpAt = null;
+let fetching = false;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
@@ -108,20 +111,24 @@ function cleanState(raw, ds) {
 function restorePlan(rawPlan, catalogue = items, st = state, prefs = state?.prefs || DEFAULT_PREFS) {
   if (!rawPlan?.runs || !Array.isArray(rawPlan.runs) || rawPlan.runs.length > 20) return null;
   const ids = new Set(catalogue.map((a) => a.id));
-  const valid = rawPlan.runs.every((r) => typeof r.title === 'string' && Array.isArray(r.achievementIds) && r.achievementIds.every((id) => ids.has(id)));
+  const byId = new Map(catalogue.map((a) => [a.id, a]));
+  const valid = rawPlan.runs.every((r) => typeof r.title === 'string' && Array.isArray(r.achievementIds) && r.achievementIds.every((id) => typeof id === 'string'));
   if (!valid) return null;
   // Saved plans from before run briefings existed are rebuilt rather than restored half-empty.
   if (!rawPlan.runs.every((r) => Array.isArray(r.briefing))) return null;
   const runs = rawPlan.runs
     .map((r) => {
-      const achievementIds = r.achievementIds.filter((id) => !st.completed[id] && !st.later[id]);
+      // Targets missing from the catalogue were unlocked on Steam since the plan was built.
+      const achievementIds = r.achievementIds.filter((id) => ids.has(id) && !st.completed[id] && !st.later[id]);
+      const trimmed = achievementIds.length !== r.achievementIds.length;
+      const targets = achievementIds.map((id) => byId.get(id));
       return {
         title: r.title.slice(0, 150),
         category: String(r.category || 'Your plan').slice(0, 50),
         why: String(r.why || '').slice(0, 3000),
-        briefing: r.briefing.filter((l) => typeof l === 'string').map((l) => l.slice(0, 300)),
+        briefing: trimmed && targets.length ? describeRun(targets, prefs) : r.briefing.filter((l) => typeof l === 'string').map((l) => l.slice(0, 300)),
         achievementIds,
-        minutes: Number.isFinite(r.minutes) ? r.minutes : 0,
+        minutes: trimmed ? runMinutes(targets) : Number.isFinite(r.minutes) ? r.minutes : 0,
       };
     })
     .filter((r, i) => r.achievementIds.length || !rawPlan.runs[i].achievementIds.length);
@@ -231,7 +238,7 @@ function renderHero() {
     .filter(Boolean)
     .sort((a, b) => a - b)[0];
   $('#infamy-stat').innerHTML = nextInfamy ? `${nextInfamy} <small>next milestone</small>` : '— <small>no target imported</small>';
-  $('#dataset-note').textContent = `${dataset.source.replace(/\.$/, '')}. ${plural(dataset.counts.locked, 'locked achievement')} in this list${dataset.importedAt ? `, imported ${relativeTime(dataset.importedAt)}` : ''}. Nothing is fetched from Steam automatically.`;
+  $('#dataset-note').textContent = `${dataset.source.replace(/\.$/, '')}. ${plural(dataset.counts.locked, 'locked achievement')} in this list${dataset.importedAt ? `, ${dataset.source.startsWith('Fetched') ? 'fetched' : 'imported'} ${relativeTime(dataset.importedAt)}` : ''}. ${STEAM_PROXY_URL ? (state.prefs.steam ? 'Refreshed from Steam each time the app opens.' : 'Add your Steam ID to refresh from Steam automatically.') : 'Nothing is fetched from Steam automatically.'}`;
   renderSaveStatus();
 }
 
@@ -437,7 +444,7 @@ function detail(id) {
       <button id="save-note" class="button secondary">Save note</button>
       <button id="later-toggle" class="text-button">${state.later[id] ? 'Return to active list' : 'Set aside for later'}</button>
     </div>
-    <p class="fine-print">Checking this off updates your website checklist. Steam status is not automatically refreshed.</p>`;
+    <p class="fine-print">${STEAM_PROXY_URL ? 'Checking this off updates your checklist here; Steam catches up when the list is next refreshed.' : 'Checking this off updates your website checklist. Steam status is not automatically refreshed.'}</p>`;
 
   const stashNote = () => {
     const text = $('#achievement-note').value;
@@ -554,11 +561,20 @@ function fillPreferences() {
 }
 
 function restore(input, extraPrefs = {}) {
+  let changes = null;
   if (input.format === 'the-completion-job') {
     if (input.version !== 1 || !input.dataset || !input.state) throw Error('This backup format is not supported.');
     const ds = normalizeDataset(input.dataset);
     const st = cleanState(input.state, ds);
     st.plan = restorePlan(input.state.plan, ds.achievements, st, st.prefs);
+    dataset = ds;
+    state = st;
+  } else if (dataset) {
+    // A fresh achievement list on top of an existing one: keep everything recorded for targets still locked.
+    const ds = normalizeDataset(input);
+    changes = compareDatasets(dataset, ds, state);
+    const st = cleanState({ ...state, prefs: { ...state.prefs, ...extraPrefs } }, ds);
+    st.plan = restorePlan(state.plan, ds.achievements, st, st.prefs);
     dataset = ds;
     state = st;
   } else {
@@ -571,6 +587,30 @@ function restore(input, extraPrefs = {}) {
   visible = PAGE_SIZE;
   breakdownExpanded = false;
   render();
+  return changes;
+}
+
+function namesList(list, limit = 25) {
+  const shown = list.slice(0, limit).map((a) => `<li>${esc(a.name)} <span class="refresh-heist">${esc(a.heist)}</span></li>`).join('');
+  const more = list.length > limit ? `<li class="refresh-more">and ${plural(list.length - limit, 'more')}</li>` : '';
+  return `<ul class="refresh-list">${shown}${more}</ul>`;
+}
+
+function showChanges(changes) {
+  const { unlocked, confirmed, unexpected, stillLocked, added, kept } = changes;
+  const sections = [];
+  if (unexpected.length) sections.push(`<h3>${plural(unexpected.length, 'achievement')} unlocked on Steam that you had not checked off here</h3>${namesList(unexpected)}`);
+  if (stillLocked.length) sections.push(`<h3>${plural(stillLocked.length, 'achievement')} checked off here but still locked on Steam</h3><p>Worth a second look. They stay checked until you change them.</p>${namesList(stillLocked)}`);
+  if (added.length) sections.push(`<h3>${plural(added.length, 'achievement')} new to this list</h3>${namesList(added)}`);
+  const lead = unlocked.length
+    ? `Steam shows ${plural(unlocked.length, 'achievement')} unlocked since your last import${confirmed.length ? `, ${confirmed.length === unlocked.length ? 'all' : confirmed.length} of which you had already checked off here` : ''}. ${plural(dataset.counts.locked, 'achievement')} left.`
+    : `Nothing new has unlocked on Steam since your last import. ${plural(dataset.counts.locked, 'achievement')} left.`;
+  $('#refresh-title').textContent = dataset.source.startsWith('Fetched') ? 'Synced with Steam' : 'List updated';
+  $('#refresh-content').innerHTML = `
+    <p>${lead}</p>
+    ${sections.join('')}
+    <p class="fine-print">Kept for the targets still locked: ${plural(kept.completed, 'checkmark')}, ${plural(kept.notes, 'note')}, ${kept.later} set aside. Your session plan was trimmed rather than rebuilt.</p>`;
+  $('#refresh-dialog').showModal();
 }
 
 async function importFile(file, errorEl, extraPrefs) {
@@ -579,12 +619,70 @@ async function importFile(file, errorEl, extraPrefs) {
   try {
     if (file.size > 8 * 1024 * 1024) throw Error('Choose a JSON file smaller than 8 MB.');
     if (!/\.json$/i.test(file.name) && !/json/.test(file.type)) throw Error('Choose a .json file. Saved web pages (.html) only contain the rows that were on screen.');
-    restore(JSON.parse(await file.text()), extraPrefs);
-    return true;
+    const changes = restore(JSON.parse(await file.text()), extraPrefs);
+    return { changes };
   } catch (error) {
     errorEl.textContent = error instanceof SyntaxError ? 'That file is not valid JSON. If you saved the Steam API page, make sure you saved the raw response, not a web page.' : error.message;
     return false;
   }
+}
+
+// ---------- Steam proxy ----------
+
+async function fetchSteam(steam) {
+  const url = `${STEAM_PROXY_URL}${STEAM_PROXY_URL.includes('?') ? '&' : '?'}steamid=${encodeURIComponent(steam)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store', signal: controller.signal });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw Error(body?.error || `The Steam proxy answered ${res.status}.`);
+    return body;
+  } catch (error) {
+    if (error.name === 'AbortError') throw Error('Steam took too long to answer. Try again in a minute.');
+    if (error instanceof TypeError) throw Error('Could not reach the Steam proxy. Check your connection and try again.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Pulls the current list from Steam through the proxy and lays it over what is loaded.
+ * `quiet` is the start-up refresh: it stays silent unless something changed or Steam refused.
+ */
+async function refreshFromSteam({ steam = state.prefs.steam, extraPrefs = {}, errorEl = null, button = null, quiet = false } = {}) {
+  if (!STEAM_PROXY_URL || fetching) return false;
+  const id = cleanPrefs({ steam }).steam;
+  if (!id) {
+    if (errorEl) errorEl.textContent = 'Enter your Steam ID first.';
+    else notify('Add your Steam ID in Preferences to refresh from Steam.');
+    return false;
+  }
+  fetching = true;
+  const label = button?.textContent;
+  if (button) { button.disabled = true; button.textContent = 'Fetching from Steam…'; }
+  if (errorEl) errorEl.textContent = '';
+  try {
+    const data = await fetchSteam(id);
+    const changes = restore(data, { steam: id, ...extraPrefs });
+    return { changes };
+  } catch (error) {
+    if (errorEl) errorEl.textContent = error.message;
+    else if (!quiet || navigator.onLine) notify(error.message);
+    return false;
+  } finally {
+    fetching = false;
+    if (button) { button.disabled = false; button.textContent = label; }
+  }
+}
+
+async function refreshAndReport(button) {
+  const result = await refreshFromSteam({ button });
+  if (!result) return;
+  const { unlocked, added, stillLocked } = result.changes;
+  if (unlocked.length || added.length || stillLocked.length) showChanges(result.changes);
+  else notify(`Up to date with Steam. ${plural(dataset.counts.locked, 'achievement')} left.`);
 }
 
 function resetEverything() {
@@ -661,11 +759,22 @@ $('#reset-data').onclick = () => {
 };
 
 $('#import-file').onchange = async (e) => {
-  if (await importFile(e.target.files[0], $('#import-error'))) {
-    $('#import-dialog').close();
-    setView('board');
-    notify('Checklist imported and saved on this device.');
-  }
+  const result = await importFile(e.target.files[0], $('#import-error'));
+  if (!result) return;
+  $('#import-dialog').close();
+  setView('board');
+  if (result.changes) showChanges(result.changes);
+  else notify('Checklist imported and saved on this device.');
+};
+$('#refresh-steam').onclick = (e) => refreshAndReport(e.currentTarget);
+$('#import-fetch').onclick = async (e) => {
+  const result = await refreshFromSteam({ errorEl: $('#import-error'), button: e.currentTarget });
+  if (!result) return;
+  $('#import-dialog').close();
+  setView('board');
+  const { unlocked, added, stillLocked } = result.changes;
+  if (unlocked.length || added.length || stillLocked.length) showChanges(result.changes);
+  else notify(`Up to date with Steam. ${plural(dataset.counts.locked, 'achievement')} left.`);
 };
 
 // Landing: name and Steam ID are optional and saved along with the first import.
@@ -674,6 +783,13 @@ const landingPrefs = () => {
   return { player: form.elements.player.value, steam: form.elements.steam.value };
 };
 $('#landing-form').addEventListener('submit', (e) => e.preventDefault());
+$('#landing-fetch').onclick = async (e) => {
+  const prefs = landingPrefs();
+  const result = await refreshFromSteam({ steam: prefs.steam, extraPrefs: prefs, errorEl: $('#landing-error'), button: e.currentTarget });
+  if (!result) return;
+  setView('board');
+  notify(state.prefs.player ? `Welcome, ${state.prefs.player}. Your board is ready.` : 'Your board is ready.');
+};
 $('#landing-file').onchange = async (e) => {
   if (await importFile(e.target.files[0], $('#landing-error'), landingPrefs())) {
     setView('board');
@@ -713,6 +829,7 @@ document.addEventListener('keydown', (e) => {
     '3': () => setView('preferences'),
     '/': () => { setView('vault'); $('#search').focus(); },
     'g': () => { setView('board'); regenerate(); },
+    'r': () => { if (STEAM_PROXY_URL) refreshAndReport($('#refresh-steam')); },
     'b': backup,
     '?': () => $('#shortcuts-dialog').showModal(),
   };
@@ -749,6 +866,7 @@ function registerServiceWorker() {
 // ---------- start ----------
 
 function init() {
+  for (const el of document.querySelectorAll('.proxy-only')) el.hidden = !STEAM_PROXY_URL;
   let raw = null;
   try {
     raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -771,6 +889,14 @@ function init() {
     backedUpAt = typeof raw?.backedUpAt === 'string' ? raw.backedUpAt : null;
     setView('board');
     render();
+    // Steam is the source of truth: pull the current list on every open and only speak up when something changed.
+    if (STEAM_PROXY_URL && state.prefs.steam && navigator.onLine) {
+      refreshFromSteam({ quiet: true }).then((result) => {
+        if (!result) return;
+        const { unlocked, added } = result.changes;
+        if (unlocked.length || added.length) showChanges(result.changes);
+      });
+    }
   } else {
     state = { completed: {}, later: {}, notes: {}, prefs: cleanPrefs({ ...DEFAULT_PREFS, ...raw?.prefs }), rotation: 0, plan: null };
     setView('landing');

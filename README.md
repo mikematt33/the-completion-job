@@ -1,12 +1,12 @@
 # The Completion Job
 
-A planning board for the PAYDAY 2 achievements you have not unlocked yet. Import your list, and it groups what is left by heist, builds sessions that fit the time you have, and keeps track as you tick things off. Everything stays in your browser; there is no account to create and nothing to install.
+A planning board for the PAYDAY 2 achievements you have not unlocked yet. Enter your Steam ID or import your list, and it groups what is left by heist, builds sessions that fit the time you have, and keeps track as you tick things off. Progress stays in your browser; there is no account to create and nothing to install.
 
 ![A session plan: a warm-up run, a Big Bank stealth run with its briefing, and an Infamy break](docs/board.png)
 
 ## What it does
 
-The site opens on a start screen that asks for your achievements file. Once that is in, there are three views.
+The site opens on a start screen that asks for your Steam ID or your achievements file. Once a list is in, there are three views.
 
 The board shows how far along you are, where the remaining work is (achievements per heist), and a plan for your next session. Each run in the plan comes with a short briefing: which difficulty covers every target in it, whether it is a stealth or loud run, which day of a multi-day heist, any time limits, and any loadout conditions. You can swap a target you do not feel like doing, mark a whole run complete, copy the plan as text, or print it.
 
@@ -24,9 +24,17 @@ Targets on the same heist are grouped, then split so a stealth target never shar
 
 What it cannot tell you: whether two targets on the same heist can be earned in the same run, whether a solo mod covers a crew achievement, or how long a run will take you. Treat the briefing as a checklist. The "How the planner works" button on the board says the same thing in the app.
 
-## Getting your achievements file
+## Getting your achievements
 
-The site needs a JSON file of your achievements. The straightforward way to get one is the Steam Web API, which any Steam account can use:
+### Straight from Steam
+
+When the site has a Steam proxy configured (see [Fetching from Steam](#fetching-from-steam-the-proxy) below), type your Steam ID or vanity name on the start screen and press **Fetch from Steam**. The list loads in a second or two, and from then on the app refreshes it from Steam every time it opens. Your profile's game details must be public for Steam to answer. Only the Steam ID leaves your browser; your checkmarks, notes, and plans do not.
+
+If Steam has unlocked something since the last visit, a short summary shows what changed. **Refresh from Steam** on the board (or the `r` key) does the same on demand.
+
+### From a file
+
+Without a proxy, or for a private profile, the site takes a JSON file of your achievements. The straightforward way to get one is the Steam Web API, which any Steam account can use:
 
 1. Create a key at https://steamcommunity.com/dev/apikey. The domain name field is not checked; put anything.
 2. Find your SteamID64, the 17-digit number in your profile URL or under Edit Profile. Your game details must be public.
@@ -42,7 +50,7 @@ The site needs a JSON file of your achievements. The straightforward way to get 
 
 Keep the key to yourself. The site never asks for it and has nowhere to store it. You can delete it afterwards from the same Steam page.
 
-The start screen walks through the same steps, and a name and Steam ID can be entered there too. Both are optional. The Steam ID is only used to link to your achievements page; nothing is fetched automatically.
+The start screen walks through the same steps, and a name and Steam ID can be entered there too. Both are optional. Without a proxy the Steam ID is only used to link to your achievements page.
 
 ### Building the file by hand
 
@@ -63,6 +71,14 @@ Any JSON with an `achievements` array works. Each entry needs a name and a statu
 
 Checkmarks, notes, plans, and preferences are written to browser storage every time they change. The sidebar shows when the last save happened.
 
+### Keeping up with Steam
+
+With a proxy configured, the app refreshes your list from Steam every time it opens, and **Refresh from Steam** on the board does it on demand. Without one, fetch a fresh export (same address as above) and import it from the vault or Preferences.
+
+Either way the new list is laid over the one you have: achievements Steam now reports as unlocked drop off, and the checkmarks, notes, set-aside flags, and session plan you have recorded for everything still locked are kept. A summary shows what changed: what unlocked on Steam that you had not checked off here, what you checked off here that Steam still shows as locked (worth a second look), and any achievements new to the list.
+
+To start from scratch instead, use "Remove everything from this browser" in Preferences before importing.
+
 Browser storage can be cleared by the browser, so export a backup once you have progress worth keeping. Preferences shows when you last did. A backup is a single JSON file with your achievement list and everything you have recorded; it can be imported on the start screen or from the vault. Importing a backup replaces what is in the browser.
 
 Preferences also has a button to remove everything from the browser and go back to the start screen.
@@ -71,7 +87,7 @@ Checking something off here does not change anything on Steam.
 
 ## Shortcuts and install
 
-`1`, `2`, `3` switch views, `/` searches, `g` builds a new batch, `b` downloads a backup, `?` shows the full list.
+`1`, `2`, `3` switch views, `/` searches, `g` builds a new batch, `r` refreshes from Steam (when a proxy is configured), `b` downloads a backup, `?` shows the full list.
 
 You can install it as an app from the browser menu or from Preferences. It works offline once installed.
 
@@ -83,7 +99,30 @@ Node.js 20 or later. No packages to install.
 npm start
 ```
 
-Open http://127.0.0.1:4173. `npm test` runs the planner and import tests against a small synthetic fixture in `tests/fixtures/`.
+Open http://127.0.0.1:4173. `npm test` runs the planner and import tests against a small synthetic fixture in `tests/fixtures/`, plus the proxy tests against a stand-in for Steam.
+
+## Fetching from Steam: the proxy
+
+Steam's Web API does not answer requests made directly from a web page, so the one-click path needs a small go-between. `worker/` holds a Cloudflare Worker (about 90 lines, free tier is plenty) that takes a Steam ID, asks Steam for that player's PAYDAY 2 achievements using *your* API key, and hands the result back. Players never need a key of their own. The worker hard-codes the PAYDAY 2 app id, resolves vanity names, caches each Steam ID for a minute, and only answers the origins you list.
+
+To set it up once:
+
+1. Create a Steam Web API key at https://steamcommunity.com/dev/apikey if you do not have one.
+2. Sign up at https://dash.cloudflare.com (free), then from the `worker/` folder:
+
+   ```text
+   npx wrangler login
+   npx wrangler secret put STEAM_API_KEY
+   npx wrangler deploy
+   ```
+
+   The deploy prints an address like `https://completion-job-steam.<you>.workers.dev`.
+
+3. Put that address in `STEAM_PROXY_URL` at the top of `app.js` and push. The fetch and refresh buttons appear, and the start screen leads with the Steam ID instead of the file.
+
+If you fork the project, add your own Pages address to `ALLOWED_ORIGINS` in `worker/wrangler.toml` before deploying; the worker refuses other origins. `localhost` and `127.0.0.1` on port 4173 are already listed for local previews. To test locally, `npx wrangler dev` runs the worker on port 8787; point `STEAM_PROXY_URL` at `http://127.0.0.1:8787/` while you do.
+
+What the proxy sees: the Steam ID and the usual request metadata. It stores nothing beyond the one-minute cache. Checkmarks, notes, plans, and preferences never leave the browser, with or without the proxy. Leave `STEAM_PROXY_URL` empty and the site is a pure static page again, with file import as the only way in.
 
 ## Hosting on GitHub Pages
 
@@ -105,6 +144,7 @@ The `CACHE` name in `sw.js` only matters for local previews; the workflow replac
 | `planner.js` | Dataset validation, classification, condition parsing, session planning |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and install metadata |
 | `scripts/serve.mjs` | Local preview server |
+| `worker/` | Optional Cloudflare Worker that fetches achievements from Steam on the site's behalf |
 | `.github/workflows/pages.yml` | Tests and deploys to GitHub Pages on push to `main` |
 | `tests/` | Tests and the synthetic fixture they run against |
 
@@ -113,6 +153,7 @@ The `CACHE` name in `sw.js` only matters for local previews; the workflow replac
 - The planner only has the description text to go on. Whether two achievements on one heist can be earned together is still your call.
 - Crew wording is flagged so you can check it. The planner does not know whether a solo mod covers that achievement.
 - Time estimates are rough and the same for everyone.
-- There is no Steam sync. Progress on the site and progress on Steam are separate.
+- Sync is one way. The site reads from Steam; checking something off here never changes anything on Steam.
+- Fetching needs the profile's game details set to public. Private profiles can still use the file route with their own key.
 
 Independent fan project. PAYDAY and related marks belong to their owners.

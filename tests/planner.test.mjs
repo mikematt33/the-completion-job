@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   normalizeDataset, buildPlan, DEFAULT_PREFS, classify, readConditions, splitIntoRuns, runMinutes,
-  requiredDifficulty, describeRun, swapTarget, heistBreakdown, planToText, cleanPrefs, steamProfileUrl,
+  requiredDifficulty, describeRun, swapTarget, heistBreakdown, planToText, cleanPrefs, steamProfileUrl, compareDatasets,
 } from '../planner.js';
 
 const input = JSON.parse(await readFile(new URL('./fixtures/sample.json', import.meta.url), 'utf8'));
@@ -210,6 +210,34 @@ test('planToText lists every target, its requirement, the briefing and the time 
   assert.ok(text.includes('[x]'));
   assert.ok(text.includes('60-minute session'));
   assert.ok(text.includes('Steam-confirmed'));
+});
+
+test('compareDatasets reports Steam unlocks against local checkmarks and counts what carries over', () => {
+  // A later export: two targets unlocked on Steam (one was checked off here, one was not), one brand-new achievement.
+  const unlockedNames = ['Vault Whisperer', 'Rat Race'];
+  const later = normalizeDataset({
+    achievements: [
+      ...input.achievements.map((a) => (unlockedNames.includes(a.name) ? { ...a, status: 'unlocked' } : a)),
+      { name: 'Fresh DLC', description: 'Complete the Brand New job on the Hard difficulty or above.', status: 'locked' },
+    ],
+  });
+  const progress = {
+    completed: { [byName('Vault Whisperer').id]: '2026-01-01T00:00:00.000Z', [byName('Beat the Clock').id]: true },
+    later: { [byName('Legend').id]: true },
+    notes: { [byName('Rat Race').id]: 'cook fast', [byName('Hoarder').id]: 'grind' },
+  };
+  const c = compareDatasets(data, later, progress);
+  assert.deepEqual(c.unlocked.map((a) => a.name).sort(), [...unlockedNames].sort());
+  assert.deepEqual(c.confirmed.map((a) => a.name), ['Vault Whisperer']);
+  assert.deepEqual(c.unexpected.map((a) => a.name), ['Rat Race']);
+  assert.deepEqual(c.stillLocked.map((a) => a.name), ['Beat the Clock']);
+  assert.deepEqual(c.added.map((a) => a.name), ['Fresh DLC']);
+  // The note on the now-unlocked Rat Race is gone; everything attached to still-locked targets stays.
+  assert.deepEqual(c.kept, { completed: 1, later: 1, notes: 1 });
+  assert.equal(later.counts.locked, items.length - 2 + 1);
+
+  const same = compareDatasets(data, data, { completed: {}, later: {}, notes: {} });
+  assert.equal(same.unlocked.length + same.added.length + same.stillLocked.length, 0);
 });
 
 test('defaults carry no personal identity and Steam IDs are cleaned into profile links', () => {

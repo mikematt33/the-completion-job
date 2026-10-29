@@ -209,6 +209,25 @@ export function normalizeDataset(input) {
   };
 }
 
+/**
+ * Compares a fresh import against the list already loaded, using the progress recorded here.
+ * Targets that have left the locked list were unlocked on Steam; the rest keep their checkmarks and notes.
+ */
+export function compareDatasets(previous, next, state) {
+  const nextIds = new Set(next.achievements.map((a) => a.id));
+  const prevIds = new Set(previous.achievements.map((a) => a.id));
+  const unlocked = previous.achievements.filter((a) => !nextIds.has(a.id));
+  const keys = (obj) => Object.keys(obj || {}).filter((id) => nextIds.has(id));
+  return {
+    unlocked,
+    confirmed: unlocked.filter((a) => state.completed?.[a.id]),
+    unexpected: unlocked.filter((a) => !state.completed?.[a.id]),
+    stillLocked: next.achievements.filter((a) => state.completed?.[a.id]),
+    added: next.achievements.filter((a) => !prevIds.has(a.id)),
+    kept: { completed: keys(state.completed).length, later: keys(state.later).length, notes: keys(state.notes).length },
+  };
+}
+
 export const isDone = (state, id) => Boolean(state.completed[id]);
 export const isActive = (state, a) => !state.completed[a.id] && !state.later[a.id];
 

@@ -93,6 +93,11 @@
             <h2>Start here</h2>
             <label><span>Your name <small class="optional">optional</small></span><input name="player" maxlength="60" autocomplete="nickname" placeholder="What should the board call you?"></label>
             <label><span>Steam ID <small class="optional">optional</small></span><input name="steam" maxlength="64" autocomplete="off" placeholder="Vanity ID or SteamID64"></label>
+            <div class="proxy-only fetch-row" hidden>
+              <button type="button" id="landing-fetch" class="button primary">Fetch from Steam</button>
+              <span>Your profile’s game details must be public. Only the Steam ID is sent.</span>
+            </div>
+            <p class="proxy-only or-divider" hidden><span>or import a file</span></p>
             <label class="drop-zone" id="drop-zone" for="landing-file">
               <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5M4 13v3h12v-3"/></svg>
               <strong>Choose your achievements file</strong>
@@ -100,11 +105,12 @@
               <input id="landing-file" type="file" accept=".json,application/json" class="sr-only">
             </label>
             <p id="landing-error" class="error" role="alert"></p>
-            <p class="fine-print">Nothing is uploaded anywhere. The file is read in your browser and saved to its local storage.</p>
+            <p class="fine-print">Nothing is uploaded anywhere. The file is read in your browser and saved to its local storage.<span class="proxy-only" hidden> Fetching sends your Steam ID to this site’s proxy, which asks Steam for your public achievement list; nothing else leaves the browser.</span></p>
           </form>
 
           <div class="panel landing-help">
             <h2>Getting your list from Steam</h2>
+            <p class="proxy-only" hidden><strong>Quickest:</strong> type your Steam ID on the left and press Fetch from Steam. The steps below are the manual route, for private profiles or if you would rather not use the proxy.</p>
             <ol class="steps">
               <li><strong>Get a Steam Web API key.</strong> Any Steam account can create one at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer">steamcommunity.com/dev/apikey</a>. Use any domain name; it is not checked.</li>
               <li><strong>Find your SteamID64.</strong> It is the 17-digit number in your profile URL, or shown under Edit Profile. Your game details must be public for the next step to work.</li>
@@ -130,6 +136,7 @@
             <p>A clear route through the achievements you have left.</p>
           </div>
           <div class="heading-actions">
+            <button class="button secondary proxy-only" id="refresh-steam" hidden>Refresh from Steam</button>
             <button class="button ghost" id="how-open">How the planner works</button>
           </div>
         </div>
@@ -334,13 +341,27 @@
   </dialog>
   <dialog id="import-dialog" class="modal" aria-labelledby="import-title">
     <form method="dialog"><button class="close-button" aria-label="Close import">×</button></form>
-    <h2 id="import-title">Import your checklist</h2>
+    <h2 id="import-title">Import or update your list</h2>
+    <div class="proxy-only" hidden>
+      <div class="fetch-row">
+        <button type="button" id="import-fetch" class="button primary">Refresh from Steam</button>
+        <span>Uses the Steam ID from your preferences.</span>
+      </div>
+      <p class="or-divider"><span>or import a file</span></p>
+    </div>
     <p>Choose a Completion Job backup, a Steam Web API <code>GetPlayerAchievements</code> export (requested with <code>l=english</code>), or any JSON file with an <code>achievements</code> array of names, descriptions and locked/unlocked status.</p>
     <p>Saved HTML can contain only part of Steam’s scrolling list. This importer uses structured JSON and checks the reported totals.</p>
     <label class="file-label">Select a JSON file<input id="import-file" type="file" accept=".json,application/json"></label>
-    <p class="fine-print">Importing an achievement list starts a new checklist. Export your current backup first. Restoring a backup replaces this browser’s saved state.</p>
+    <p class="fine-print">Importing a fresh achievement list updates the one you have: anything Steam now shows as unlocked drops off, and checkmarks, notes, set-aside flags and your plan are kept for everything still locked. You will see a summary of what changed. Restoring a backup replaces this browser’s saved state. To start over instead, use “Remove everything from this browser” in Preferences.</p>
     <button id="import-backup-first" class="text-button">Export current backup first</button>
     <p id="import-error" class="error" role="alert"></p>
+  </dialog>
+
+  <dialog id="refresh-dialog" class="modal" aria-labelledby="refresh-title">
+    <form method="dialog"><button class="close-button" aria-label="Close update summary">×</button></form>
+    <h2 id="refresh-title">List updated</h2>
+    <div id="refresh-content"></div>
+    <form method="dialog" class="detail-actions"><button class="button primary">Back to the board</button></form>
   </dialog>
 
   <dialog id="shortcuts-dialog" class="modal" aria-labelledby="shortcuts-title">
@@ -350,6 +371,7 @@
       <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Board, vault, preferences</dd></div>
       <div><dt><kbd>/</kbd></dt><dd>Search the vault</dd></div>
       <div><dt><kbd>g</kbd></dt><dd>Build a new session batch</dd></div>
+      <div class="proxy-only" hidden><dt><kbd>r</kbd></dt><dd>Refresh from Steam</dd></div>
       <div><dt><kbd>b</kbd></dt><dd>Download a backup</dd></div>
       <div><dt><kbd>?</kbd></dt><dd>Show this list</dd></div>
       <div><dt><kbd>Esc</kbd></dt><dd>Close dialogs</dd></div>
