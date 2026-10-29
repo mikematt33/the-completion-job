@@ -298,6 +298,7 @@ button.stat:hover { border-color: var(--line-strong); background: var(--surface-
 .stat span { font-size: 13px; color: var(--muted); }
 .stat strong { font-family: var(--display); font-size: 34px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
 .stat strong small { font: 500 13px var(--font); color: var(--muted); margin-left: 6px; }
+.stat strong small.level { font: 600 20px var(--display); color: var(--ink-soft); margin-left: 0; }
 
 /* ---------- heist breakdown ---------- */
 

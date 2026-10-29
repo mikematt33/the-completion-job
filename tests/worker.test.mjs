@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { lookup } from '../worker/index.js';
+import worker, { lookup, readProfile } from '../worker/index.js';
 import { normalizeDataset } from '../planner.js';
 
 const env = { STEAM_API_KEY: 'test-key', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:4173' };
@@ -23,19 +23,37 @@ function steam(routes) {
 }
 
 test('lookup fetches PAYDAY 2 achievements in English with the secret key and never echoes the key', async () => {
-  const { fetcher, calls } = steam([{ path: 'GetPlayerAchievements', body: { playerstats: { steamID: ID, gameName: 'PAYDAY 2', achievements, success: true } } }]);
+  const { fetcher, calls } = steam([
+    { path: 'GetPlayerAchievements', body: { playerstats: { steamID: ID, gameName: 'PAYDAY 2', achievements, success: true } } },
+    { path: 'GetUserStatsForGame', body: { playerstats: { stats: [{ name: 'player_level', value: 37 }, { name: 'player_rank_0', value: 1 }, { name: 'player_rank_1', value: 1 }, { name: 'player_rank_2', value: 1 }, { name: 'heist_x', value: 9 }] } } },
+  ]);
   const result = await lookup(ID, env, fetcher);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].searchParams.get('appid'), '218620');
-  assert.equal(calls[0].searchParams.get('l'), 'english');
-  assert.equal(calls[0].searchParams.get('key'), 'test-key');
+  const ach = calls.find((u) => u.pathname.includes('GetPlayerAchievements'));
+  assert.equal(calls.length, 2);
+  assert.equal(ach.searchParams.get('appid'), '218620');
+  assert.equal(ach.searchParams.get('l'), 'english');
+  assert.equal(ach.searchParams.get('key'), 'test-key');
   assert.equal(result.steamid, ID);
   assert.equal(result.source, 'Fetched from Steam');
+  assert.deepEqual(result.profile, { level: 37, infamy: 2 });
   assert.ok(!JSON.stringify(result).includes('test-key'));
   // The importer accepts the proxy's response as-is.
   const ds = normalizeDataset(result);
   assert.equal(ds.achievements.length, 1);
   assert.equal(ds.source, 'Fetched from Steam');
+});
+
+test('Infamy and level come from the stats feed; missing stats never block the list', async () => {
+  assert.deepEqual(readProfile([{ name: 'player_level', value: 100 }, { name: 'player_rank_0', value: 1 }]), { level: 100, infamy: 0 });
+  assert.deepEqual(readProfile([{ name: 'player_rank_7', value: 1 }, { name: 'player_rank_12', value: 1 }, { name: 'player_rank_30', value: 0 }]), { level: null, infamy: 12 });
+  assert.deepEqual(readProfile([{ name: 'player_level', value: 150.7 }]), { level: 100, infamy: 0 });
+  assert.equal(readProfile([{ name: 'heist_x', value: 1 }]), null);
+  assert.equal(readProfile(undefined), null);
+
+  const noStats = steam([{ path: 'GetPlayerAchievements', body: { playerstats: { achievements } } }, { path: 'GetUserStatsForGame', status: 500, body: null }]);
+  const result = await lookup(ID, env, noStats.fetcher);
+  assert.equal(result.profile, null);
+  assert.equal(result.playerstats.achievements.length, 2);
 });
 
 test('vanity names are resolved first; profile URLs are accepted', async () => {

@@ -104,8 +104,19 @@ function cleanState(raw, ds) {
     notes,
     prefs: cleanPrefs({ ...DEFAULT_PREFS, ...raw?.prefs }),
     rotation: Number.isInteger(raw?.rotation) ? Math.max(0, raw.rotation) : 0,
+    profile: cleanProfile(raw?.profile),
     plan: null,
   };
+}
+
+// Level and Infamy as reported by Steam's stats feed; null when the list came from a file.
+function cleanProfile(p) {
+  if (!p || typeof p !== 'object') return null;
+  const int = (v, max) => (Number.isInteger(v) && v >= 0 && v <= max ? v : null);
+  const level = int(p.level, 100);
+  const infamy = int(p.infamy, 500);
+  if (level === null && infamy === null) return null;
+  return { level, infamy, at: typeof p.at === 'string' && Number.isFinite(Date.parse(p.at)) ? p.at : new Date().toISOString() };
 }
 
 function restorePlan(rawPlan, catalogue = items, st = state, prefs = state?.prefs || DEFAULT_PREFS) {
@@ -238,7 +249,16 @@ function renderHero() {
     .map((a) => (/fiftieth/i.test(a.description) ? 50 : /seventy-fifth/i.test(a.description) ? 75 : /hundredth/i.test(a.description) ? 100 : null))
     .filter(Boolean)
     .sort((a, b) => a - b)[0];
-  $('#infamy-stat').innerHTML = nextInfamy ? `${nextInfamy} <small>next milestone</small>` : '— <small>no target imported</small>';
+  const rank = state.profile?.infamy ?? state.prefs.infamy;
+  const level = state.profile?.level;
+  $('#infamy-label').textContent = rank === null || rank === undefined ? 'Infamy target' : 'Infamy';
+  $('#infamy-stat').innerHTML = rank !== null && rank !== undefined
+    ? `${rank}${level !== null && level !== undefined ? `<small class="level">-${level}</small>` : ''} <small>${nextInfamy ? `next ${nextInfamy}` : 'milestones done'}</small>`
+    : nextInfamy ? `${nextInfamy} <small>next milestone</small>` : '— <small>no target imported</small>';
+  const infamyHelp = $('#infamy-help');
+  infamyHelp.textContent = state.profile
+    ? `Steam reports Infamy ${state.profile.infamy ?? '?'}${state.profile.level !== null ? `, level ${state.profile.level}` : ''} as of ${relativeTime(state.profile.at)}. This field follows Steam on every refresh.`
+    : 'Used for the Infamy break in your session plan. Filled in automatically when your list is fetched from Steam.';
   $('#dataset-note').textContent = `${dataset.source.replace(/\.$/, '')}. ${plural(dataset.counts.locked, 'locked achievement')} in this list${dataset.importedAt ? `, ${dataset.source.startsWith('Fetched') ? 'fetched' : 'imported'} ${relativeTime(dataset.importedAt)}` : ''}. ${STEAM_PROXY_URL ? (state.prefs.steam ? 'Refreshed from Steam each time the app opens.' : 'Add your Steam ID to refresh from Steam automatically.') : 'Nothing is fetched from Steam automatically.'}`;
   renderSaveStatus();
 }
@@ -562,7 +582,7 @@ function fillPreferences() {
   }
 }
 
-function restore(input, extraPrefs = {}) {
+function restore(input, extraPrefs = {}, profile) {
   let changes = null;
   if (input.format === 'the-completion-job') {
     if (input.version !== 1 || !input.dataset || !input.state) throw Error('This backup format is not supported.');
@@ -575,13 +595,13 @@ function restore(input, extraPrefs = {}) {
     // A fresh achievement list on top of an existing one: keep everything recorded for targets still locked.
     const ds = normalizeDataset(input);
     changes = compareDatasets(dataset, ds, state);
-    const st = cleanState({ ...state, prefs: { ...state.prefs, ...extraPrefs } }, ds);
+    const st = cleanState({ ...state, prefs: { ...state.prefs, ...extraPrefs }, profile: profile ?? state.profile }, ds);
     st.plan = restorePlan(state.plan, ds.achievements, st, st.prefs);
     dataset = ds;
     state = st;
   } else {
     dataset = normalizeDataset(input);
-    state = cleanState({ prefs: { ...state.prefs, ...extraPrefs } }, dataset);
+    state = cleanState({ prefs: { ...state.prefs, ...extraPrefs }, profile }, dataset);
   }
   items = dataset.achievements;
   state.plan ||= buildPlan(items, state, state.prefs, state.rotation);
@@ -667,7 +687,10 @@ async function refreshFromSteam({ steam = state.prefs.steam, extraPrefs = {}, er
   if (errorEl) errorEl.textContent = '';
   try {
     const data = await fetchSteam(id);
-    const changes = restore(data, { steam: id, ...extraPrefs });
+    // Steam's stats feed knows the Infamy rank, so the preference follows it rather than being typed in.
+    const profile = cleanProfile(data.profile);
+    const fromSteam = profile?.infamy !== null && profile?.infamy !== undefined ? { infamy: profile.infamy } : {};
+    const changes = restore(data, { steam: id, ...extraPrefs, ...fromSteam }, profile);
     return { changes };
   } catch (error) {
     if (errorEl) errorEl.textContent = error.message;
@@ -691,7 +714,7 @@ function resetEverything() {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
   dataset = null;
   items = [];
-  state = { completed: {}, later: {}, notes: {}, prefs: cleanPrefs(DEFAULT_PREFS), rotation: 0, plan: null };
+  state = { completed: {}, later: {}, notes: {}, prefs: cleanPrefs(DEFAULT_PREFS), rotation: 0, profile: null, plan: null };
   savedAt = null;
   backedUpAt = null;
   $('#landing-form').reset();
@@ -920,7 +943,7 @@ function init() {
       });
     }
   } else {
-    state = { completed: {}, later: {}, notes: {}, prefs: cleanPrefs({ ...DEFAULT_PREFS, ...raw?.prefs }), rotation: 0, plan: null };
+    state = { completed: {}, later: {}, notes: {}, prefs: cleanPrefs({ ...DEFAULT_PREFS, ...raw?.prefs }), rotation: 0, profile: null, plan: null };
     setView('landing');
   }
   setInterval(renderSaveStatus, 60000);

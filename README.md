@@ -32,7 +32,7 @@ What it cannot tell you: whether two targets on the same heist can be earned in 
 
 When the site has a Steam proxy configured (see [Fetching from Steam](#fetching-from-steam-the-proxy) below), type your Steam ID or vanity name on the start screen and press **Fetch from Steam**. The list loads in a second or two, and from then on the app refreshes it from Steam every time it opens. Your profile's game details must be public for Steam to answer. Only the Steam ID leaves your browser; your checkmarks, notes, and plans do not.
 
-If Steam has unlocked something since the last visit, a short summary shows what changed. **Refresh from Steam** on the board (or the `r` key) does the same on demand.
+If Steam has unlocked something since the last visit, a short summary shows what changed. **Refresh from Steam** on the board (or the `r` key) does the same on demand. Each fetch also reads your Infamy rank and level from Steam's stats feed, so the Infamy preference fills itself in and the board shows your current rank next to the next milestone.
 
 ### From a file
 
@@ -105,7 +105,7 @@ Open http://127.0.0.1:4173. `npm test` runs the planner and import tests against
 
 ## Fetching from Steam: the proxy
 
-Steam's Web API does not answer requests made directly from a web page, so the one-click path needs a small go-between. `worker/` holds a Cloudflare Worker (about 90 lines, free tier is plenty) that takes a Steam ID, asks Steam for that player's PAYDAY 2 achievements using *your* API key, and hands the result back. Players never need a key of their own. The worker hard-codes the PAYDAY 2 app id, resolves vanity names, caches each Steam ID for a minute, and only answers the origins you list.
+Steam's Web API does not answer requests made directly from a web page, so the one-click path needs a small go-between. `worker/` holds a Cloudflare Worker (about 100 lines, free tier is plenty) that takes a Steam ID, asks Steam for that player's PAYDAY 2 achievements and stats using *your* API key, and hands the result back. Players never need a key of their own. The worker hard-codes the PAYDAY 2 app id, resolves vanity names, caches each Steam ID for a minute, and only answers the origins you list.
 
 To set it up once:
 

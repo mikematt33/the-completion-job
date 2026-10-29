@@ -182,7 +182,7 @@
           <button class="stat" data-view="vault" data-status="remaining"><span>Still on the board</span><strong id="remaining-count">248</strong></button>
           <button class="stat" data-view="vault" data-status="done"><span>Checked off here</span><strong id="completed-count">0</strong></button>
           <button class="stat" data-view="vault" data-status="later"><span>Set aside for later</span><strong id="later-count">0</strong></button>
-          <div class="stat"><span>Infamy target</span><strong id="infamy-stat">50 <small>next milestone</small></strong></div>
+          <div class="stat"><span id="infamy-label">Infamy target</span><strong id="infamy-stat">50 <small>next milestone</small></strong></div>
         </div>
 
         <section class="board-section" aria-labelledby="breakdown-heading">
@@ -291,7 +291,8 @@
             <label>Your name<input name="player" maxlength="60" placeholder="What should the board call you?"></label>
             <label>Steam ID<input name="steam" maxlength="64" autocomplete="off" placeholder="Vanity name or 17-digit SteamID64" aria-describedby="steam-help"></label>
             <p id="steam-help" class="form-help wide">The part after <code>steamcommunity.com/id/</code> or <code>/profiles/</code>. <span class="file-only">Used only to link to your achievements page; nothing is fetched automatically.</span><span class="proxy-only" hidden>Used to refresh your list from Steam each time the app opens and to link to your profile.</span></p>
-            <label>Current Infamy rank<input name="infamy" type="number" min="0" max="500" inputmode="numeric" placeholder="Set your current rank"></label>
+            <label>Current Infamy rank<input name="infamy" type="number" min="0" max="500" inputmode="numeric" placeholder="Set your current rank" aria-describedby="infamy-help"></label>
+            <p id="infamy-help" class="form-help wide"></p>
             <label>Playstyle<select name="playstyle"><option value="solo">Solo</option><option value="crew">With a crew</option></select></label>
             <label>Comfortable difficulty<select name="difficulty"><option>Normal</option><option>Hard</option><option>Very Hard</option><option>OVERKILL</option><option>Mayhem</option><option>Death Wish</option><option>Death Sentence</option></select></label>
             <label>Session length<select name="minutes"><option value="30">About 30 minutes</option><option value="60">About an hour</option><option value="120">Two hours or more</option></select></label>
